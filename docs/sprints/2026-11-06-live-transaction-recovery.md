@@ -4,6 +4,8 @@
 
 - Starting `origin/main`: `9d38ff6c4e6e05fc77df0b6f6f45626e8798cd07`.
 - Feature branch: `feat/live-tx-recovery-hardening-20261106`.
+- Implementation commit: `4c035d149426ad1cbace1988540b8a531e113af9`.
+- Draft review PR #11: https://github.com/surajgojanur/arc-splitpay-mumbai-2026/pull/11 (target `main`).
 - PR #10 remained open as a draft at `https://github.com/surajgojanur/arc-splitpay-mumbai-2026/pull/10`; its integration commits were already ancestors of `main`. The latest observed PR checks passed. No PR state or issue state was changed.
 - Repository-specific ownership rules were reviewed. No files under `chain/**`, `docs/chain-handoff.md`, or immutable `docs/studio-original/**` were edited.
 
