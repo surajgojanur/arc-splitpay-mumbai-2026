@@ -101,6 +101,7 @@ Cancel: `cancelInvoice(id)` by payer while status is Open.
 
 - `chain/abi/ArcSplit.json`: plain JSON ABI array (functions, events, errors). Regenerate with `forge build && node script/export-abi.mjs`.
 - `chain/deployments/arc-testnet.json` (after deploy): `{ chainId, contractAddress, usdcAddress, usdcDecimals, deploymentBlock, deploymentTransactionHash, compilerVersion, sourceCommit, explorerUrl }`, exactly the schema in `docs/architecture.md`.
+- The deployment writer rejects HTTP/JSON-RPC errors, missing or malformed bytecode, wrong chain IDs, and public receipts whose transaction, contract, block number or block hash differ from the local broadcast receipt. Failed checks write no deployment metadata; they must be investigated before retrying.
 - Compiler: solc `0.8.28+commit.7893614a`, optimizer 200 runs, EVM `cancun`. OpenZeppelin Contracts `5.1.0`.
 
 ## Reproduce

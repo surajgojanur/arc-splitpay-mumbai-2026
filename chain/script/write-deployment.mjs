@@ -7,20 +7,40 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const run = JSON.parse(readFileSync(join(root, "broadcast/Deploy.s.sol/5042002/run-latest.json"), "utf8"));
-const tx = run.transactions.find((t) => t.transactionType === "CREATE" && t.contractName === "ArcSplit");
-const receipt = run.receipts.find((r) => r.transactionHash === tx.hash);
-if (!tx || !receipt || receipt.status !== "0x1") throw new Error("No successful ArcSplit CREATE receipt in broadcast");
+const tx = run.transactions?.find((t) => t.transactionType === "CREATE" && t.contractName === "ArcSplit");
+const hashPattern = /^0x[0-9a-f]{64}$/i;
+const addressPattern = /^0x[0-9a-f]{40}$/i;
+const quantityPattern = /^0x(?:0|[1-9a-f][0-9a-f]*)$/i;
+if (!tx || !hashPattern.test(tx.hash) || !addressPattern.test(tx.contractAddress)
+  || /^0x0{40}$/i.test(tx.contractAddress)) throw new Error("No valid ArcSplit CREATE transaction in broadcast");
+const receipt = run.receipts?.find((r) => r.transactionHash?.toLowerCase() === tx.hash.toLowerCase());
+if (!receipt || receipt.status !== "0x1" || !quantityPattern.test(receipt.blockNumber)
+  || !hashPattern.test(receipt.blockHash)
+  || receipt.contractAddress?.toLowerCase() !== tx.contractAddress.toLowerCase())
+  throw new Error("No successful matching ArcSplit CREATE receipt in broadcast");
 // Re-check against the public Arc Testnet RPC so a local fork broadcast (same chain id) can never be recorded.
 const RPC = "https://rpc.testnet.arc.io";
 const rpc = async (method, params) => {
-  const r = await fetch(RPC, { method: "POST", headers: { "content-type": "application/json" },
+  const r = await fetch(RPC, { method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(15_000),
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) });
-  return (await r.json()).result;
+  if (!r.ok) throw new Error(`${method}: RPC HTTP ${r.status}`);
+  const body = await r.json();
+  if (!body || body.error || !Object.hasOwn(body, "result"))
+    throw new Error(`${method}: RPC error or missing result`);
+  return body.result;
 };
+if (await rpc("eth_chainId", []) !== "0x4cef52") throw new Error("RPC is not Arc Testnet (5042002)");
 const live = await rpc("eth_getTransactionReceipt", [tx.hash]);
-if (!live || live.status !== "0x1" || live.contractAddress?.toLowerCase() !== tx.contractAddress.toLowerCase())
+if (!live || live.status !== "0x1" || live.contractAddress?.toLowerCase() !== tx.contractAddress.toLowerCase()
+  || live.transactionHash?.toLowerCase() !== tx.hash.toLowerCase()
+  || !quantityPattern.test(live.blockNumber) || live.blockNumber.toLowerCase() !== receipt.blockNumber.toLowerCase()
+  || live.blockHash?.toLowerCase() !== receipt.blockHash.toLowerCase())
   throw new Error(`Deployment tx ${tx.hash} not found/successful on ${RPC}`);
-if ((await rpc("eth_getCode", [tx.contractAddress, "latest"])) === "0x") throw new Error("No code at address on Arc Testnet");
+const code = await rpc("eth_getCode", [tx.contractAddress, "latest"]);
+if (typeof code !== "string" || !/^0x(?:[0-9a-f]{2})+$/i.test(code))
+  throw new Error("No valid code at address on Arc Testnet");
+const deploymentBlock = Number(BigInt(live.blockNumber));
+if (!Number.isSafeInteger(deploymentBlock)) throw new Error("Deployment block is not a safe integer");
 const artifact = JSON.parse(readFileSync(join(root, "out/ArcSplit.sol/ArcSplit.json"), "utf8"));
 const explorer = "https://explorer.testnet.arc.io";
 const out = {
@@ -28,7 +48,7 @@ const out = {
   contractAddress: tx.contractAddress,
   usdcAddress: "0x3600000000000000000000000000000000000000",
   usdcDecimals: 6,
-  deploymentBlock: Number(BigInt(live.blockNumber)),
+  deploymentBlock,
   deploymentTransactionHash: tx.hash,
   compilerVersion: artifact.metadata.compiler.version,
   sourceCommit: process.env.SOURCE_COMMIT ?? execSync("git rev-parse HEAD", { cwd: root }).toString().trim(),
