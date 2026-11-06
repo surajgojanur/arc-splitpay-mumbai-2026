@@ -18,6 +18,10 @@ Do not enable live writes until `chain/deployments/arc-testnet.json` exists.
 
 The action script supports macOS's default Bash 3.2: address/hash comparisons use portable lowercase conversion. Offline tests include a valid payment path to the refusing Forge stub, so an unrelated shell error cannot stand in for successful safety checks. Zero recipient addresses are rejected before Forge.
 
+Gas/token balance comparisons and recipient balance deltas use `script/amounts.mjs` with bigint arithmetic across the full uint256 range. Shell signed-integer arithmetic is not used for chain amounts; malformed or out-of-range values stop the action.
+
+Post-payment lookup and duplicate-settlement checks use the ID from the broadcast's successful `InvoiceCreated` receipt, validated against the target contract and payer. They never use the current global `invoiceCount`, which can advance due to another user's invoice. Missing or ambiguous creation evidence stops verification.
+
 ## Network (verified live 2026-11-06)
 
 | | |
