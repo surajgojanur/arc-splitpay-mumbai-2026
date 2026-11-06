@@ -38,12 +38,16 @@ Screenshots in `web/public/screenshots/`: landing.png, wallet-disconnected.png, 
 
 ## Studio integration validation — 2026-11-06
 
+The measurements below are historical validation of the initial Studio export and frontend integration. The current proposed Studio-derived candidate and final browser additions are recorded separately in the [submission readiness update](reviews/2026-11-06-submission-readiness-update.md) and [evidence manifest](submission/evidence-manifest.md).
+
 The downloaded Studio export is now available and preserved. Its shareable project URL is still missing. Separate independent contracts exist: Studio source (`docs/studio-original/`) and Kishore PR #9 (`a3ac1b7`); neither is deployed. Contract-owner source/profile selection and actual payment evidence remain mandatory.
 
 Fresh local Foundry 1.7.1 results in isolated temporary copies:
 
 - Studio: `forge clean`, `forge build`, `forge test -vv`: **60 passed / 0 failed / 0 skipped**, including both full default invariant runs (146 seconds). Solc 0.8.28, OpenZeppelin 5.6.1, exported forge-std. Fresh ABI exactly equals exported Studio and handoff ABI; handoff SHA256 manifest passes.
 - Kishore: `npm ci`, `forge build`, `forge test -vv`: **48 passed / 0 failed / 0 skipped**. Published ABI equals freshly compiled ABI. No change to his branch/files.
+
+Latest proposed-work CI: Kishore chain suite **49/49**, Studio-derived candidate **64/64**, deployment safety **12/12**, and compiled candidate ABI matches the preserved Studio ABI. Frontend is now **115/115 unit tests** and **5/5 Chromium scenarios** (including mobile form bounds and no console/page errors). See [chain PR checks](https://github.com/surajgojanur/arc-splitpay-mumbai-2026/pull/15) and [web PR checks](https://github.com/surajgojanur/arc-splitpay-mumbai-2026/pull/14). Candidate source still requires Kishore review.
 
 Frontend: clean install, TypeScript, lint, **59 unit tests**, production build and **4 Chromium scenarios** passed locally. Unit tests cover profile ABI/configuration validation, 6-decimal conversions and payouts, RPC/bytecode/token/receipt gates, network/account mismatch, wallet rejection, balance/allowance, expiry/cancellation/duplicate guards, exact approvals, confirmed create/pay/cancel, decoded events and both transfers, simulation failure, timeout hash preservation/recovery and amount limits. The metadata CLI was tested with synthetic metadata only in a separate scratch directory; real config remains null.
 

@@ -8,6 +8,11 @@ const shot = (name: string) =>
 test("fixture invoice validation, preview, rejection, pending, recovery and receipt", async ({
   page,
 }) => {
+  const browserErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => browserErrors.push(error.message));
   await page.goto("/");
   await expect(page.getByText("DEMO DATA", { exact: true })).toBeVisible();
   await expect(
@@ -74,6 +79,36 @@ test("fixture invoice validation, preview, rejection, pending, recovery and rece
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
+  ).toBe(true);
+  expect(browserErrors).toEqual([]);
+});
+
+test("mobile invoice form and split preview fit without horizontal overflow", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Create an invoice", exact: false })
+    .click();
+  await page
+    .getByRole("button", { name: "Use demo wallet & sample recipients" })
+    .click();
+  await expect(page.getByText("70 USDC", { exact: true })).toBeVisible();
+  await expect(page.getByText("30 USDC", { exact: true })).toBeVisible();
+  await page.screenshot({ path: shot("mobile-invoice-form"), fullPage: true });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  expect(
+    await page
+      .getByRole("button", { name: "Create demo invoice", exact: false })
+      .evaluate((button) => {
+        const { left, right } = button.getBoundingClientRect();
+        return left >= 0 && right <= window.innerWidth;
+      }),
   ).toBe(true);
 });
 test("lookup, cancellation and mobile layout", async ({ page }) => {
