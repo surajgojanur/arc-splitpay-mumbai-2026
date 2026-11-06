@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import LivePanel from "./live-panel";
 import { useEffect, useRef, useState } from "react";
 import { formatUnits, parseUnits } from "viem";
 import {
@@ -24,7 +25,9 @@ export default function Dashboard() {
   const [adapter] = useState(() => new FixtureAdapter());
   const wallet = useWallet();
   const [demo, setDemo] = useState(false);
-  const [view, setView] = useState<"home" | "create" | "invoice">("home");
+  const [view, setView] = useState<"home" | "create" | "invoice" | "live">(
+    "home",
+  );
   const [invoice, setInvoice] = useState<Invoice>();
   const [lookup, setLookup] = useState("1");
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -159,10 +162,11 @@ export default function Dashboard() {
   return (
     <>
       <div className="demo-banner">
-        <strong>DEMO DATA</strong>
+        <strong>{view === "live" ? "ARC TESTNET" : "DEMO DATA"}</strong>
         <span>
-          Fixture preview · No real transfers · Live contract integration
-          pending
+          {view === "live"
+            ? "Live connection · Verified deployment required · Human wallet signatures only"
+            : "Fixture preview · No real transfers · Live contract integration pending"}
         </span>
       </div>
       <header>
@@ -213,6 +217,15 @@ export default function Dashboard() {
           >
             Create invoice
           </button>
+          <button
+            className={view === "live" ? "selected" : ""}
+            onClick={() => {
+              setView("live");
+              setMessage("");
+            }}
+          >
+            Live payments
+          </button>
           <a
             href="https://github.com/surajgojanur/arc-splitpay-mumbai-2026"
             target="_blank"
@@ -244,9 +257,12 @@ export default function Dashboard() {
             {wallet.balance === undefined
               ? "Unavailable"
               : formatUnits(wallet.balance, 6)}{" "}
-            · Live invoice writes unavailable
+            · Use Live payments to verify contract configuration
           </p>
         )}
+        <div hidden={view !== "live"}>
+          <LivePanel wallet={wallet} />
+        </div>
         {view === "home" && (
           <>
             <section className="hero">
@@ -679,7 +695,11 @@ export default function Dashboard() {
         <footer>
           <span className="brand footer-brand">a/ ArcSplit</span>
           <span>Programmable payments. Human simplicity.</span>
-          <span>Arc Testnet · Fixture preview</span>
+          <span>
+            {view === "live"
+              ? "Arc Testnet · Live connection"
+              : "Arc Testnet · Fixture preview"}
+          </span>
         </footer>
       </main>
     </>

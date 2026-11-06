@@ -388,6 +388,13 @@ export class LiveInvoiceService {
         );
       if (this.deployment.profile === "studio-v1" && d.amount > 2n ** 128n - 1n)
         throw new Error("Studio invoice amount exceeds uint128.");
+      if (
+        this.deployment.profile === "kishore-v1" &&
+        d.amount * BigInt(d.shareBps) > 2n ** 256n - 1n
+      )
+        throw new Error(
+          "Invoice amount would overflow this contract's payout multiplication.",
+        );
       const args =
         this.deployment.profile === "studio-v1"
           ? [
