@@ -10,6 +10,11 @@
     "typecheck": "npm run typecheck -w web",
     "lint": "npm run lint -w web",
     "test": "npm run test -w web",
-    "test:e2e": "npm run test:e2e -w web"
+    "test:e2e": "npm run test:e2e -w web",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "prettier": "3.9.10"
   }
 }
