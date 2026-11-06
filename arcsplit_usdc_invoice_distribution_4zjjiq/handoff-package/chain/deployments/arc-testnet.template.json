@@ -1,0 +1,13 @@
+{
+  "_comment": "TEMPLATE ONLY. Copy to arc-testnet.json after a real deployment and replace every null. Never commit invented values.",
+  "chainId": 5042002,
+  "contractAddress": null,
+  "usdcAddress": "0x3600000000000000000000000000000000000000",
+  "usdcDecimals": 6,
+  "deploymentBlock": null,
+  "deploymentTransactionHash": null,
+  "compilerVersion": "0.8.28",
+  "sourceCommit": null,
+  "explorerUrl": null,
+  "deployedBy": null
+}
