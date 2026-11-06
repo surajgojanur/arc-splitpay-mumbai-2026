@@ -21,6 +21,7 @@ The candidate requires the official Arc Testnet USDC address and verifies six de
 - ABI identity: PASS with `node chain/script/check-studio-abi.mjs`.
 - GitHub Actions run [42262548689](https://github.com/surajgojanur/arc-splitpay-mumbai-2026/actions/runs/42262548689): PASS. Existing Kishore suite: 49/49; proposed candidate suite: 64/64; deployment-safety tests: 12/12; both ABI comparisons passed. CI installed Foundry via the pinned `v1.7.1` toolchain. Local Foundry was unavailable, so all Foundry execution was remote CI.
 - No deployment, signing, RPC write, or payment was performed.
+- Existing live deployment tooling remains gated to `kishore-v1`; the Studio candidate has no deployment/preflight path and is intentionally not wired into it.
 - Exact source/dependency/compiler reproducibility and security remain subject to fresh CI and Kishore review. Exact ABI equality does not prove bytecode equivalence or Studio deployment provenance.
 
 ## Review decision requested

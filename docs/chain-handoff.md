@@ -10,6 +10,7 @@ Owner: Kishore (`chain/**`, this file). Interface agreed-in-principle per propos
 | ABI `chain/abi/ArcSplit.json` | Exported (plain ABI array) |
 | Arc Testnet deployment | **Not deployed.** No deployment wallet has been approved or inspected; no wallet was funded or used in this sprint |
 | `chain/deployments/arc-testnet.json` | **Does not exist yet.** Written only by `script/write-deployment.mjs` from a receipt re-verified on the public Arc RPC |
+| Deployment profile tooling | `live-arc-testnet.sh` is gated to `kishore-v1`; the proposed Studio-derived candidate has no deployment/preflight path and remains disabled |
 | Live payment / tx hashes | None yet |
 | Arc Studio | Exported Studio source is preserved under `docs/studio-original/`; judge-openable project URL and original session evidence remain missing. A separate Studio-derived candidate is proposed in `chain/studio-candidate/` and is not owner-approved |
 
