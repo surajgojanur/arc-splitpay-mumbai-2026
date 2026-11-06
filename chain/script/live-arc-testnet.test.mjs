@@ -38,6 +38,17 @@ case "$1" in
       'decimals()(uint8)') echo "\${MOCK_DECIMALS:-6}" ;;
       'balanceOf(address)(uint256)') echo "\${MOCK_TOKEN_BALANCE:-100000000}" ;;
       'invoiceCount()(uint256)') echo 999 ;;
+      'payInvoice(uint256)')
+        case "\${MOCK_DUPLICATE_RESULT:-expected}" in
+          expected) echo 'Error: execution reverted: custom error 0x094311f1' >&2; exit 1 ;;
+          decoded) echo 'Error: execution reverted: InvoiceNotOpen()' >&2; exit 1 ;;
+          upper) echo 'Error: execution reverted: custom error 0x094311F1' >&2; exit 1 ;;
+          success) echo 0x ;;
+          rpc) echo 'Error: connection timeout' >&2; exit 1 ;;
+          rpc-selector) echo 'Error: timeout while expecting 0x094311f1' >&2; exit 1 ;;
+          wrong) echo 'Error: execution reverted: custom error 0xf04e9cf0' >&2; exit 1 ;;
+          malformed) echo 'Error: execution reverted: custom error 0x094311f100' >&2; exit 1 ;;
+        esac ;;
       *) echo 1 ;;
     esac ;;
   *) exit 9 ;;
@@ -348,6 +359,16 @@ test("payment invoice identity comes from its own creation receipt even when rec
   assert.doesNotMatch(trace, /invoiceCount/);
   assert.match(trace, /getInvoice\(uint256\)\(address,address,address,uint256,uint16,uint64,uint8\) 1 --rpc-url/);
   assert.match(trace, /payInvoice\(uint256\) 1 --from/);
+  for (const outcome of ["success", "rpc", "rpc-selector", "wrong", "malformed"]) {
+    const duplicate = invoke("payment", { ...f.env, ARCSPLIT_CONFIRM_PAYMENT: "YES", MOCK_PAYMENT_SUCCESS: "YES", MOCK_DUPLICATE_RESULT: outcome });
+    assert.equal(duplicate.status, 2, `${outcome}: ${duplicate.stderr}`);
+    assert.match(duplicate.stderr, /duplicate settlement/);
+    assert.doesNotMatch(duplicate.stdout, /gasUsed=/);
+  }
+  for (const outcome of ["decoded", "upper"]) {
+    const decoded = invoke("payment", { ...f.env, ARCSPLIT_CONFIRM_PAYMENT: "YES", MOCK_PAYMENT_SUCCESS: "YES", MOCK_DUPLICATE_RESULT: outcome });
+    assert.equal(decoded.status, 0, decoded.stderr);
+  }
   for (const [transactions, receipts] of [
     [[], [receipt]], [[tx, tx], [receipt]], [[tx], []], [[tx], [receipt, receipt]],
     [[tx], [{ ...receipt, status: "0x0" }]], [[tx], [{ ...receipt, logs: [] }]],

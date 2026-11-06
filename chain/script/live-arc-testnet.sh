@@ -142,7 +142,16 @@ echo "recipient A delta: $DELTA_A; recipient B delta: $DELTA_B"
 ID="$(node script/payment-invoice-id.mjs broadcast/DemoPayment.s.sol/5042002/run-latest.json "$ARCSPLIT_ADDRESS" "$ME")"
 echo "invoice $ID: $(cast call "$ARCSPLIT_ADDRESS" 'getInvoice(uint256)(address,address,address,uint256,uint16,uint64,uint8)' "$ID" --rpc-url "$RPC" | tr '\n' ' ')"
 echo "duplicate settlement eth_call (expect InvoiceNotOpen 0x094311f1):"
-cast call "$ARCSPLIT_ADDRESS" 'payInvoice(uint256)' "$ID" --from "$ME" --rpc-url "$RPC" 2>&1 | tail -1 || true
+if DUPLICATE_RESULT="$(cast call "$ARCSPLIT_ADDRESS" 'payInvoice(uint256)' "$ID" --from "$ME" --rpc-url "$RPC" 2>&1)"; then
+  echo "FAILED: duplicate settlement unexpectedly succeeded for invoice $ID." >&2
+  exit 2
+fi
+EXPECTED_DUPLICATE_ERROR='(^|[^[:alnum:]_])(0x094311[fF]1|InvoiceNotOpen\(\))([^[:alnum:]_]|$)'
+if [[ "$DUPLICATE_RESULT" != *revert* || ! "$DUPLICATE_RESULT" =~ $EXPECTED_DUPLICATE_ERROR ]]; then
+  printf 'FAILED: duplicate settlement did not return InvoiceNotOpen for invoice %s:\n%s\n' "$ID" "$DUPLICATE_RESULT" >&2
+  exit 2
+fi
+printf '%s\n' "$DUPLICATE_RESULT"
 
 node -e '
 const r=require("./broadcast/DemoPayment.s.sol/5042002/run-latest.json");

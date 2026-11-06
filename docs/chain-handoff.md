@@ -22,6 +22,8 @@ Gas/token balance comparisons and recipient balance deltas use `script/amounts.m
 
 Post-payment lookup and duplicate-settlement checks use the ID from the broadcast's successful `InvoiceCreated` receipt, validated against the target contract and payer. They never use the current global `invoiceCount`, which can advance due to another user's invoice. Missing or ambiguous creation evidence stops verification.
 
+Duplicate-settlement verification must fail with `InvoiceNotOpen` (selector `0x094311f1` or decoded `InvoiceNotOpen()`). An unexpected successful call, unrelated revert, or RPC failure stops verification with exit code 2; these outcomes are not accepted as proof against double settlement.
+
 ## Network (verified live 2026-11-06)
 
 | | |
