@@ -22,6 +22,7 @@ before(async () => {
   await mkdir(join(root, "bin"));
   await copyFile(realScript, join(root, "chain/script/live-arc-testnet.sh"));
   await copyFile(join(repo, "script/amounts.mjs"), join(root, "chain/script/amounts.mjs"));
+  await copyFile(join(repo, "script/payment-invoice-id.mjs"), join(root, "chain/script/payment-invoice-id.mjs"));
   await writeFile(join(root, "bin/cast"), `#!/usr/bin/env bash
 set -eu
 printf 'cast %s\\n' "$*" >>"$TRACE_LOG"
@@ -36,6 +37,7 @@ case "$1" in
       'usdc()(address)') echo "\${MOCK_TOKEN:-${usdc}}" ;;
       'decimals()(uint8)') echo "\${MOCK_DECIMALS:-6}" ;;
       'balanceOf(address)(uint256)') echo "\${MOCK_TOKEN_BALANCE:-100000000}" ;;
+      'invoiceCount()(uint256)') echo 999 ;;
       *) echo 1 ;;
     esac ;;
   *) exit 9 ;;
@@ -43,6 +45,8 @@ esac
 `);
   await writeFile(join(root, "bin/forge"), `#!/usr/bin/env bash
 printf 'forge %s\\n' "$*" >>"$TRACE_LOG"
+# A successful offline rehearsal only; this executable is still a stub and cannot broadcast.
+if [[ "\${MOCK_PAYMENT_SUCCESS:-}" == YES ]]; then exit 0; fi
 if [[ " $* " == *" --broadcast "* ]]; then echo 'BLOCKED BY TEST STUB: real Forge never ran' >&2; exit 97; fi
 exit 98
 `);
@@ -248,5 +252,46 @@ test("amount arithmetic preserves uint256 limits and signed recipient deltas", (
     assert.equal(run("enough", value, "1").status, 2, value);
     assert.equal(run("enough", max, value).status, 2, value);
     assert.equal(run("delta", "0", value).status, 2, value);
+  }
+});
+
+test("payment invoice identity comes from its own creation receipt even when receipts are reordered", async () => {
+  const hash = `0x${"ab".repeat(32)}`;
+  const payer = `0x${"aa".repeat(20)}`;
+  const log = {
+    address: chainAddress,
+    topics: ["0xa64b246a5fea9dda213b3a1b2b2553a401a8cfe3ee7222f33e32ffddfcbdc1a7", `0x${"1".padStart(64, "0")}`, `0x${payer.slice(2).padStart(64, "0")}`],
+  };
+  const tx = { hash, function: "createInvoice(address,address,uint256,uint16,uint64)", transaction: { to: chainAddress } };
+  const receipt = { transactionHash: hash, status: "0x1", gasUsed: "0x5208", logs: [log] };
+  const path = join(root, "payment-broadcast.json");
+  const run = async (transactions, receipts) => {
+    await writeFile(path, JSON.stringify({ transactions, receipts, invoiceCount: "999" }));
+    return spawnSync(process.execPath, [join(repo, "script/payment-invoice-id.mjs"), path, chainAddress, payer], { encoding: "utf8" });
+  };
+  const valid = await run([tx], [{ transactionHash: `0x${"cc".repeat(32)}`, logs: [] }, receipt]);
+  assert.equal(valid.status, 0, valid.stderr);
+  assert.equal(valid.stdout.trim(), "1");
+  const f = await fixture();
+  const broadcastDir = join(root, "chain/broadcast/DemoPayment.s.sol/5042002");
+  await mkdir(broadcastDir, { recursive: true });
+  await copyFile(path, join(broadcastDir, "run-latest.json"));
+  const payment = invoke("payment", { ...f.env, ARCSPLIT_CONFIRM_PAYMENT: "YES", MOCK_PAYMENT_SUCCESS: "YES" });
+  assert.equal(payment.status, 0, payment.stderr);
+  const trace = await traceText(f.trace);
+  assert.doesNotMatch(trace, /invoiceCount/);
+  assert.match(trace, /getInvoice\(uint256\)\(address,address,address,uint256,uint16,uint64,uint8\) 1 --rpc-url/);
+  assert.match(trace, /payInvoice\(uint256\) 1 --from/);
+  for (const [transactions, receipts] of [
+    [[], [receipt]], [[tx, tx], [receipt]], [[tx], []], [[tx], [receipt, receipt]],
+    [[tx], [{ ...receipt, status: "0x0" }]], [[tx], [{ ...receipt, logs: [] }]],
+    [[tx], [{ ...receipt, logs: [log, log] }]],
+    [[tx], [{ ...receipt, logs: [{ ...log, address: recipientA }] }]],
+    [[tx], [{ ...receipt, logs: [{ ...log, topics: [log.topics[0], log.topics[1], `0x${"bb".repeat(32)}`] }] }]],
+    [[tx], [{ ...receipt, logs: [{ ...log, topics: [log.topics[0], `0x${"0".repeat(64)}`, log.topics[2]] }] }]],
+  ]) {
+    const rejected = await run(transactions, receipts);
+    assert.equal(rejected.status, 2, rejected.stderr);
+    assert.equal(rejected.stdout, "");
   }
 });

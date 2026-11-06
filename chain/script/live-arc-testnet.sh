@@ -139,7 +139,7 @@ DELTA_A="$(node script/amounts.mjs delta "$A0" "$A1")"
 DELTA_B="$(node script/amounts.mjs delta "$B0" "$B1")"
 echo "recipient A delta: $DELTA_A; recipient B delta: $DELTA_B"
 
-ID="$(cast call "$ARCSPLIT_ADDRESS" 'invoiceCount()(uint256)' --rpc-url "$RPC" | awk '{print $1}')"
+ID="$(node script/payment-invoice-id.mjs broadcast/DemoPayment.s.sol/5042002/run-latest.json "$ARCSPLIT_ADDRESS" "$ME")"
 echo "invoice $ID: $(cast call "$ARCSPLIT_ADDRESS" 'getInvoice(uint256)(address,address,address,uint256,uint16,uint64,uint8)' "$ID" --rpc-url "$RPC" | tr '\n' ' ')"
 echo "duplicate settlement eth_call (expect InvoiceNotOpen 0x094311f1):"
 cast call "$ARCSPLIT_ADDRESS" 'payInvoice(uint256)' "$ID" --from "$ME" --rpc-url "$RPC" 2>&1 | tail -1 || true
