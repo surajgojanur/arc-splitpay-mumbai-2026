@@ -25,6 +25,10 @@ import {
 import { USDC } from "../lib/network";
 import { recoveryStorageKey, type RecoveryStore } from "../lib/tx-recovery";
 import {
+  prepareDeploymentMetadata,
+  verifyArcDeployment,
+} from "../scripts/prepare-deployment.mjs";
+import {
   FIXTURE_PAYER as payer,
   FIXTURE_A as a,
   FIXTURE_B as b,
@@ -351,6 +355,13 @@ describe("ABI and deployment gates", () => {
       ),
     );
     expect(abis["studio-v1"]).toEqual(studio);
+    const kishore = JSON.parse(
+      readFileSync(
+        new URL("../../chain/abi/ArcSplit.json", import.meta.url),
+        "utf8",
+      ),
+    );
+    expect(abis["kishore-v1"]).toEqual(kishore);
     expect(
       getAbiItem({ abi: abis["studio-v1"], name: "settleInvoice" }),
     ).toBeTruthy();
@@ -358,6 +369,122 @@ describe("ABI and deployment gates", () => {
       getAbiItem({ abi: abis["kishore-v1"], name: "payInvoice" }),
     ).toBeTruthy();
     expect(abiHash("studio-v1")).not.toBe(abiHash("kishore-v1"));
+  });
+  it("rejects malformed or zero deployment metadata before config can be written", () => {
+    const metadata = {
+      chainId: 5042002,
+      contractAddress: contract,
+      usdcAddress: USDC,
+      usdcDecimals: 6,
+      deploymentBlock: "12",
+      deploymentTransactionHash: deployHash,
+      compilerVersion: "0.8.28+commit.7893614a",
+      sourceCommit: "a".repeat(40),
+      explorerUrl: `https://explorer.testnet.arc.io/address/${contract}`,
+    };
+    const runtimeHash = keccak256(code);
+    expect(() =>
+      prepareDeploymentMetadata(metadata, "auto", runtimeHash),
+    ).toThrow("profile");
+    expect(() =>
+      prepareDeploymentMetadata(
+        { ...metadata, contractAddress: USDC },
+        "kishore-v1",
+        runtimeHash,
+      ),
+    ).toThrow("metadata");
+    expect(() =>
+      prepareDeploymentMetadata(
+        { ...metadata, deploymentTransactionHash: `0x${"0".repeat(64)}` },
+        "kishore-v1",
+        runtimeHash,
+      ),
+    ).toThrow("metadata");
+    expect(() =>
+      prepareDeploymentMetadata(metadata, "kishore-v1", `0x${"0".repeat(64)}`),
+    ).toThrow("runtime code hash");
+  });
+  it("prepares config only after read-only receipt, runtime, token and chain verification", async () => {
+    const metadata = {
+      chainId: 5042002,
+      contractAddress: contract,
+      usdcAddress: USDC,
+      usdcDecimals: 6,
+      deploymentBlock: "12",
+      deploymentTransactionHash: deployHash,
+      compilerVersion: "0.8.28+commit.7893614a",
+      sourceCommit: "a".repeat(40),
+      explorerUrl: `https://explorer.testnet.arc.io/address/${contract}`,
+    };
+    const prepared = prepareDeploymentMetadata(
+      metadata,
+      "kishore-v1",
+      keccak256(code),
+    );
+    const fake = {
+      getChainId: async () => 5042002,
+      getTransactionReceipt: async () => ({
+        status: "success",
+        blockNumber: 12n,
+        contractAddress: contract,
+      }),
+      getCode: async () => code,
+      readContract: async ({
+        address,
+        functionName,
+      }: {
+        address: Address;
+        functionName: string;
+      }) => (functionName === "usdc" ? USDC : address === USDC ? 6 : 0),
+    };
+    await expect(
+      verifyArcDeployment(prepared, fake as never),
+    ).resolves.toBeUndefined();
+    await expect(
+      verifyArcDeployment(prepared, {
+        ...fake,
+        getChainId: async () => 1,
+      } as never),
+    ).rejects.toThrow("network");
+    await expect(
+      verifyArcDeployment(prepared, {
+        ...fake,
+        getCode: async () => "0x" as Hex,
+      } as never),
+    ).rejects.toThrow("bytecode");
+    await expect(
+      verifyArcDeployment(prepared, {
+        ...fake,
+        getTransactionReceipt: async () => ({
+          status: "reverted",
+          blockNumber: 12n,
+          contractAddress: contract,
+        }),
+      } as never),
+    ).rejects.toThrow("receipt");
+    await expect(
+      verifyArcDeployment(prepared, {
+        ...fake,
+        readContract: async ({
+          functionName,
+        }: {
+          address: Address;
+          functionName: string;
+        }) => (functionName === "usdc" ? a : 6),
+      } as never),
+    ).rejects.toThrow("official 6-decimal");
+    await expect(
+      verifyArcDeployment(prepared, {
+        ...fake,
+        readContract: async ({
+          address,
+          functionName,
+        }: {
+          address: Address;
+          functionName: string;
+        }) => (functionName === "usdc" ? USDC : address === USDC ? 18 : 0),
+      } as never),
+    ).rejects.toThrow("official 6-decimal");
   });
   it("rejects missing configuration before any RPC or signature", () =>
     expect(() => parseDeployment(null)).toThrow("Contract not deployed"));
