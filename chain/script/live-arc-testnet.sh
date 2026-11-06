@@ -132,6 +132,8 @@ done
 bal() { cast call "$USDC" 'balanceOf(address)(uint256)' "$1" --rpc-url "$RPC" | awk '{print $1}'; }
 A0="$(bal "$RECIPIENT_A")"
 B0="$(bal "$RECIPIENT_B")"
+node script/amounts.mjs enough "$A0" 0
+node script/amounts.mjs enough "$B0" 0
 forge script script/DemoPayment.s.sol --rpc-url "$RPC" --broadcast --private-key "$PRIVATE_KEY"
 A1="$(bal "$RECIPIENT_A")"
 B1="$(bal "$RECIPIENT_B")"
@@ -140,7 +142,8 @@ DELTA_B="$(node script/amounts.mjs delta "$B0" "$B1")"
 echo "recipient A delta: $DELTA_A; recipient B delta: $DELTA_B"
 
 ID="$(node script/payment-invoice-id.mjs broadcast/DemoPayment.s.sol/5042002/run-latest.json "$ARCSPLIT_ADDRESS" "$ME")"
-echo "invoice $ID: $(cast call "$ARCSPLIT_ADDRESS" 'getInvoice(uint256)(address,address,address,uint256,uint16,uint64,uint8)' "$ID" --rpc-url "$RPC" | tr '\n' ' ')"
+INVOICE="$(cast call "$ARCSPLIT_ADDRESS" 'getInvoice(uint256)(address,address,address,uint256,uint16,uint64,uint8)' "$ID" --rpc-url "$RPC" | tr '\n' ' ')"
+echo "invoice $ID: $INVOICE"
 echo "duplicate settlement eth_call (expect InvoiceNotOpen 0x094311f1):"
 if DUPLICATE_RESULT="$(cast call "$ARCSPLIT_ADDRESS" 'payInvoice(uint256)' "$ID" --from "$ME" --rpc-url "$RPC" 2>&1)"; then
   echo "FAILED: duplicate settlement unexpectedly succeeded for invoice $ID." >&2
@@ -153,6 +156,4 @@ if [[ "$DUPLICATE_RESULT" != *revert* || ! "$DUPLICATE_RESULT" =~ $EXPECTED_DUPL
 fi
 printf '%s\n' "$DUPLICATE_RESULT"
 
-node -e '
-const r=require("./broadcast/DemoPayment.s.sol/5042002/run-latest.json");
-r.transactions.forEach((t,i)=>{const rc=r.receipts[i];console.log(`${t.function??t.transactionType} ${t.hash} gasUsed=${parseInt(rc.gasUsed,16)} status=${rc.status} https://explorer.testnet.arc.io/tx/${t.hash}`)})'
+node script/broadcast-summary.mjs broadcast/DemoPayment.s.sol/5042002/run-latest.json

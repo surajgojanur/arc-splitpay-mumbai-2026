@@ -35,6 +35,8 @@ export function prepareDeploymentMetadata(d, profile, runtimeCodeHash) {
     d.contractAddress.toLowerCase() === zeroAddress.toLowerCase() ||
     d.contractAddress.toLowerCase() === USDC.toLowerCase() ||
     !isHash(d.deploymentTransactionHash) ||
+    (typeof d.deploymentBlock === "number" &&
+      !Number.isSafeInteger(d.deploymentBlock)) ||
     !/^\d+$/.test(String(d.deploymentBlock)) ||
     BigInt(d.deploymentBlock) < 0n ||
     typeof d.compilerVersion !== "string" ||
@@ -83,6 +85,8 @@ export async function verifyArcDeployment(
   ]);
   if (
     receipt.status !== "success" ||
+    receipt.transactionHash?.toLowerCase() !==
+      metadata.deploymentTransactionHash.toLowerCase() ||
     receipt.blockNumber !== BigInt(metadata.deploymentBlock) ||
     !receipt.contractAddress ||
     receipt.contractAddress.toLowerCase() !==
