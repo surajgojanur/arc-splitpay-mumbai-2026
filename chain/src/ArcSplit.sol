@@ -79,7 +79,10 @@ contract ArcSplit is ReentrancyGuard {
         external
         returns (uint256 id)
     {
-        if (recipientA == address(0) || recipientB == address(0) || recipientA == recipientB) {
+        if (
+            recipientA == address(0) || recipientB == address(0) || recipientA == recipientB
+                || recipientA == address(this) || recipientB == address(this)
+        ) {
             revert InvalidRecipient();
         }
         if (amount == 0) revert InvalidAmount();

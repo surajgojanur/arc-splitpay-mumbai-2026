@@ -135,6 +135,16 @@ contract ArcSplitTest is Test {
         split.createInvoice(alice, alice, HUNDRED, SHARE_70, expiry);
     }
 
+    function test_create_revertsContractAsRecipient() public {
+        vm.prank(payer);
+        vm.expectRevert(ArcSplit.InvalidRecipient.selector);
+        split.createInvoice(address(split), bob, HUNDRED, SHARE_70, expiry);
+
+        vm.prank(payer);
+        vm.expectRevert(ArcSplit.InvalidRecipient.selector);
+        split.createInvoice(alice, address(split), HUNDRED, SHARE_70, expiry);
+    }
+
     function test_create_revertsShareZero() public {
         vm.prank(payer);
         vm.expectRevert(ArcSplit.InvalidShare.selector);
@@ -490,7 +500,10 @@ contract ArcSplitHostileTokenTest is Test {
         assertEq(st, uint8(ArcSplit.Status.Open));
     }
 
-    function _reentrancySetup(bool cancel, bool sameInvoice) internal returns (ReentrantToken t, ArcSplit s, uint256 id) {
+    function _reentrancySetup(bool cancel, bool sameInvoice)
+        internal
+        returns (ReentrantToken t, ArcSplit s, uint256 id)
+    {
         t = new ReentrantToken();
         s = new ArcSplit(address(t));
         t.mint(payer, 2 * HUNDRED);
