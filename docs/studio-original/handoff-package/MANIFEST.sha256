@@ -1,0 +1,17 @@
+c2d31f264d6b75ac4d05869066ce250cbd9b0ecd95e4277ed5468689136260ff  ./README.md
+5072fb25fce6278895b1b02d7daf46599e7bdb5c3a4c572304992b885a8aea0b  ./chain/.gitignore
+1c1d603aa96a6e025664926e4604319146b0f40d8eee0ef5a0732ed2e6b6de60  ./chain/abi/ArcSplit.json
+50abe32cc8ab38538a86d23ffe59af53ba8fd5d5a3d4a898f6510bd29740229d  ./chain/deployments/arc-testnet.template.json
+4c8ff55959ccb5a896d5cbdaa5d9b351caa8990708212cb3f766cc63970244b3  ./chain/docs/ARCSPLIT_ARCHITECTURE.md
+f16059f74760e8b0c1e1d14f656beb2716831d1840d3525f50b57c8abe6a8651  ./chain/docs/INTEGRATION_CONTRACT.md
+371842439fb2a5da6f740f747969220b1a6c1dab4d34f7795b9690c19244bece  ./chain/docs/SECURITY.md
+aa9333241026aaa7d47f9ea2f18fe6e380e88a476c792d0b26b438d3096533a6  ./chain/foundry.toml
+79f11452d3ebfaa9c9c1cf7afa0dce42dda3bced35f7047ea30e850a1a61cfb1  ./chain/remappings.txt
+f194e731901bda2e9d3825e9850e9e070934fc0fdb6fdfe1e54d8b5436f782c3  ./chain/script/DeployArcSplit.s.sol
+0d14d1b4ed65cdefcee52136916ed8b068e9a720302e212b196fb38f5f8264be  ./chain/setup.sh
+b7c3e7de35dc74271b0e39e5e1acc26d889f8a93714d45277c3231c6e2098d24  ./chain/src/ArcSplit.sol
+b1314b44b1b725d82bd3fb89a987a5799b3218d8e9ee7f87b27476f11fba09b5  ./chain/src/interfaces/IArcSplit.sol
+5a93b933670a3912a617b7e0c5d8817108dbb95c87582b702ff75cc0f969e829  ./chain/test/ArcSplit.t.sol
+d11310f96d57d6c3cd5ced553743f8d66d0869b3f205c92e30aa4ca8d2929853  ./docs/chain-handoff.md
+70aee35c10ca291a89061e82ccb83263b76f96069dda650cdd3ab720ca08e143  ./for-suraj/arc-studio-provenance.md
+305a265c7d47b8759075ec1cb0edeb73d0f4c5f18f67c156bcd94a8d20c39122  ./for-suraj/web-integration.md

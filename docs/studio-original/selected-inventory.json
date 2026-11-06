@@ -1,0 +1,177 @@
+[
+  {
+    "path": "contracts/ArcSplit.sol",
+    "sha256": "b7c3e7de35dc74271b0e39e5e1acc26d889f8a93714d45277c3231c6e2098d24",
+    "bytes": 7588
+  },
+  {
+    "path": "contracts/interfaces/IArcSplit.sol",
+    "sha256": "b1314b44b1b725d82bd3fb89a987a5799b3218d8e9ee7f87b27476f11fba09b5",
+    "bytes": 2313
+  },
+  {
+    "path": "contracts/test/ArcSplit.t.sol",
+    "sha256": "ddebdbabff849a684c2fd5ec6c14d55d087475e3ab1774c64ecab80c86fbbbde",
+    "bytes": 25345
+  },
+  {
+    "path": "docs/handoff/ArcSplit.abi.json",
+    "sha256": "1c1d603aa96a6e025664926e4604319146b0f40d8eee0ef5a0732ed2e6b6de60",
+    "bytes": 10275
+  },
+  {
+    "path": "docs/handoff/README.md",
+    "sha256": "afe377c64cb3190ca83c430f555a60495d6208f8dfe7db7478c12b32ab80cf21",
+    "bytes": 5121
+  },
+  {
+    "path": "docs/architecture.md",
+    "sha256": "e439530b9f6b04379d1197713b8a8d135b0ebe200ce41fd891dd36634a859609",
+    "bytes": 4242
+  },
+  {
+    "path": "foundry.toml",
+    "sha256": "d4487433e6302f64723a9498dbecef26761dfbe156a4599a04ff2f93cf4813bf",
+    "bytes": 639
+  },
+  {
+    "path": "remappings.txt",
+    "sha256": "7db29ab99ec9f13cfd2dc2c9c746f77e57f85c17c6186a15204e1dfdcfadd29c",
+    "bytes": 93
+  },
+  {
+    "path": "package.json",
+    "sha256": "591a16fc66ddd3b8d458826679877a725a13cd85a1314c8e29297c7cec289b74",
+    "bytes": 1734
+  },
+  {
+    "path": "src/contracts/arcSplitAbi.ts",
+    "sha256": "28187a7f1424360460ecf35d559a2d8e7007866da872ca8df9ac2b18208f53fc",
+    "bytes": 10392
+  },
+  {
+    "path": "src/contracts/arcSplit.ts",
+    "sha256": "552ce41087f2a38bffdcbcda37190636a6255fc51e44ae6f04480b45be543d99",
+    "bytes": 1339
+  },
+  {
+    "path": "src/hooks/useTx.ts",
+    "sha256": "985ab287327c5352be401d1021374ec039f982a9326aa50d373b2c93f91b15ae",
+    "bytes": 2173
+  },
+  {
+    "path": "src/hooks/useInvoice.ts",
+    "sha256": "3288ecfe6afbbe08d17cc5aec6ad4fce70857031cae99ea3803e6c33520b9ce8",
+    "bytes": 4224
+  },
+  {
+    "path": "src/lib/split.ts",
+    "sha256": "9ce6a569ab195a57ea2142303490ed73853ec6f42d11bdf098ddd2538849dce6",
+    "bytes": 1371
+  },
+  {
+    "path": "src/lib/errors.ts",
+    "sha256": "8e5a4cc303c38e9cca17784ab095580ee9937b8dd9b71c411d4b350606b5d782",
+    "bytes": 2824
+  },
+  {
+    "path": "lib/forge-std/LICENSE-MIT",
+    "sha256": "6d185dfe089d4de346d391fc5997fbd4739bad1d6556010413c10f420d704ecc",
+    "bytes": 1073
+  },
+  {
+    "path": "lib/forge-std/LICENSE-APACHE",
+    "sha256": "50b6bf8bdb63265ce14953b480b7aaa0271e78f56843b99c184abd3ae5048cd7",
+    "bytes": 10897
+  },
+  {
+    "path": "handoff-package/MANIFEST.sha256",
+    "sha256": "fa32d4499d50a8db8e474adccaa5d4226362664879a47ceb4bd01b80b82151b5",
+    "bytes": 1604
+  },
+  {
+    "path": "handoff-package/README.md",
+    "sha256": "c2d31f264d6b75ac4d05869066ce250cbd9b0ecd95e4277ed5468689136260ff",
+    "bytes": 677
+  },
+  {
+    "path": "handoff-package/for-suraj/web-integration.md",
+    "sha256": "305a265c7d47b8759075ec1cb0edeb73d0f4c5f18f67c156bcd94a8d20c39122",
+    "bytes": 3804
+  },
+  {
+    "path": "handoff-package/for-suraj/arc-studio-provenance.md",
+    "sha256": "70aee35c10ca291a89061e82ccb83263b76f96069dda650cdd3ab720ca08e143",
+    "bytes": 1423
+  },
+  {
+    "path": "handoff-package/docs/chain-handoff.md",
+    "sha256": "d11310f96d57d6c3cd5ced553743f8d66d0869b3f205c92e30aa4ca8d2929853",
+    "bytes": 8870
+  },
+  {
+    "path": "handoff-package/chain/setup.sh",
+    "sha256": "0d14d1b4ed65cdefcee52136916ed8b068e9a720302e212b196fb38f5f8264be",
+    "bytes": 403
+  },
+  {
+    "path": "handoff-package/chain/remappings.txt",
+    "sha256": "79f11452d3ebfaa9c9c1cf7afa0dce42dda3bced35f7047ea30e850a1a61cfb1",
+    "bytes": 93
+  },
+  {
+    "path": "handoff-package/chain/foundry.toml",
+    "sha256": "aa9333241026aaa7d47f9ea2f18fe6e380e88a476c792d0b26b438d3096533a6",
+    "bytes": 443
+  },
+  {
+    "path": "handoff-package/chain/.gitignore",
+    "sha256": "5072fb25fce6278895b1b02d7daf46599e7bdb5c3a4c572304992b885a8aea0b",
+    "bytes": 49
+  },
+  {
+    "path": "handoff-package/chain/docs/ARCSPLIT_ARCHITECTURE.md",
+    "sha256": "4c8ff55959ccb5a896d5cbdaa5d9b351caa8990708212cb3f766cc63970244b3",
+    "bytes": 4256
+  },
+  {
+    "path": "handoff-package/chain/docs/SECURITY.md",
+    "sha256": "371842439fb2a5da6f740f747969220b1a6c1dab4d34f7795b9690c19244bece",
+    "bytes": 4611
+  },
+  {
+    "path": "handoff-package/chain/docs/INTEGRATION_CONTRACT.md",
+    "sha256": "f16059f74760e8b0c1e1d14f656beb2716831d1840d3525f50b57c8abe6a8651",
+    "bytes": 6741
+  },
+  {
+    "path": "handoff-package/chain/test/ArcSplit.t.sol",
+    "sha256": "5a93b933670a3912a617b7e0c5d8817108dbb95c87582b702ff75cc0f969e829",
+    "bytes": 25349
+  },
+  {
+    "path": "handoff-package/chain/src/ArcSplit.sol",
+    "sha256": "b7c3e7de35dc74271b0e39e5e1acc26d889f8a93714d45277c3231c6e2098d24",
+    "bytes": 7588
+  },
+  {
+    "path": "handoff-package/chain/script/DeployArcSplit.s.sol",
+    "sha256": "f194e731901bda2e9d3825e9850e9e070934fc0fdb6fdfe1e54d8b5436f782c3",
+    "bytes": 1890
+  },
+  {
+    "path": "handoff-package/chain/deployments/arc-testnet.template.json",
+    "sha256": "50abe32cc8ab38538a86d23ffe59af53ba8fd5d5a3d4a898f6510bd29740229d",
+    "bytes": 435
+  },
+  {
+    "path": "handoff-package/chain/abi/ArcSplit.json",
+    "sha256": "1c1d603aa96a6e025664926e4604319146b0f40d8eee0ef5a0732ed2e6b6de60",
+    "bytes": 10275
+  },
+  {
+    "path": "handoff-package/chain/src/interfaces/IArcSplit.sol",
+    "sha256": "b1314b44b1b725d82bd3fb89a987a5799b3218d8e9ee7f87b27476f11fba09b5",
+    "bytes": 2313
+  }
+]
