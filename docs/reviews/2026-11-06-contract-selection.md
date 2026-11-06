@@ -52,6 +52,8 @@ This recommendation is not approval. It prioritizes the requested Arc Studio sma
 
 Kishore must approve (1) the source choice, (2) any adaptation, (3) exact profile/ABI semantics, (4) the reviewed build/runtime hash, and (5) the team-controlled wallet/deployment plan. Suraj's frontend already supports the exact `studio-v1` ABI; no deployment metadata is active. Reproduction is locally possible with the pinned toolchains, but deployment is not currently authorized or reproducible from an approved source/wallet.
 
+**Important deployment-tool scope:** the proposed preflight and gated broadcast script in this branch currently build and accept `kishore-v1` only. If Kishore selects the recommended Studio-derived adaptation, its source, pinned dependency set, `Deploy.s.sol`, ABI export, metadata writer and profile gate must first be changed and revalidated together against that exact source. The profile JSON is a process guard requiring an explicit `approved: true`, profile and exact source commit; it is not a cryptographic proof of Kishore's identity or a substitute for a recorded owner review and separate deployment authorization.
+
 ## Verified finding
 
 - **MEDIUM — corrected as a proposed patch:** Kishore's baseline accepted `address(this)` for either recipient. Paying such an invoice could transfer USDC into ArcSplit, which has no withdrawal path and is documented as non-custodial. The separate `feat/chain-deployment-readiness-20261106` proposal rejects self-recipient values with the existing `InvalidRecipient` error and tests both positions. This is not merged or owner-approved.

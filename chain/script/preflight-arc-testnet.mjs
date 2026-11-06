@@ -45,7 +45,9 @@ try {
 
 try {
   const selection = JSON.parse(await readFile(join(root, "deployment-profile.json"), "utf8"));
-  add(selection.approved === true && selection.profile === "kishore-v1" ? "PASS" : "BLOCKED", "Owner profile approval", "The source/profile must be explicitly approved by the contract owner");
+  const sourceCommit = command("git", ["rev-parse", "HEAD"]);
+  const exactSourceApproved = selection.approved === true && selection.profile === "kishore-v1" && selection.sourceCommit === sourceCommit;
+  add(exactSourceApproved ? "PASS" : "BLOCKED", "Owner profile approval", `Requires explicit kishore-v1 selection for exact source commit ${sourceCommit}`);
 } catch {
   add("BLOCKED", "Owner profile approval", "chain/deployment-profile.json is absent; do not infer approval from the branch name");
 }
