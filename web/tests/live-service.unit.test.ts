@@ -384,6 +384,13 @@ describe("ABI and deployment gates", () => {
     };
     const runtimeHash = keccak256(code);
     expect(() =>
+      prepareDeploymentMetadata(
+        { ...metadata, deploymentBlock: Number.MAX_SAFE_INTEGER + 1 },
+        "kishore-v1",
+        runtimeHash,
+      ),
+    ).toThrow("metadata");
+    expect(() =>
       prepareDeploymentMetadata(metadata, "auto", runtimeHash),
     ).toThrow("profile");
     expect(() =>
@@ -425,6 +432,7 @@ describe("ABI and deployment gates", () => {
       getChainId: async () => 5042002,
       getTransactionReceipt: async () => ({
         status: "success",
+        transactionHash: deployHash,
         blockNumber: 12n,
         contractAddress: contract,
       }),
@@ -440,6 +448,15 @@ describe("ABI and deployment gates", () => {
     await expect(
       verifyArcDeployment(prepared, fake as never),
     ).resolves.toBeUndefined();
+    await expect(
+      verifyArcDeployment(prepared, {
+        ...fake,
+        getTransactionReceipt: async () => ({
+          ...(await fake.getTransactionReceipt()),
+          transactionHash: `0x${"99".repeat(32)}`,
+        }),
+      } as never),
+    ).rejects.toThrow("receipt");
     await expect(
       verifyArcDeployment(prepared, {
         ...fake,

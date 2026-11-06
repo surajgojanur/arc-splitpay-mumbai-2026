@@ -6,7 +6,7 @@ Owner: Kishore (`chain/**`, this file). The proposed final source/profile decisi
 
 | Item | State |
 |---|---|
-| Contract `chain/src/ArcSplit.sol` | Implemented; 49 Foundry tests pass in CI, owner approval of final source/profile remains pending |
+| Contract `chain/src/ArcSplit.sol` | Implemented; 51 Foundry tests pass locally on 2026-11-07, owner approval of final source/profile remains pending |
 | ABI `chain/abi/ArcSplit.json` | Exported (plain ABI array) |
 | Arc Testnet deployment | **Not deployed.** No deployment wallet has been approved or inspected; no wallet was funded or used in this sprint |
 | `chain/deployments/arc-testnet.json` | **Does not exist yet.** Written only by `script/write-deployment.mjs` from a receipt re-verified on the public Arc RPC |
@@ -23,6 +23,8 @@ Gas/token balance comparisons and recipient balance deltas use `script/amounts.m
 Post-payment lookup and duplicate-settlement checks use the ID from the broadcast's successful `InvoiceCreated` receipt, validated against the target contract and payer. They never use the current global `invoiceCount`, which can advance due to another user's invoice. Missing or ambiguous creation evidence stops verification.
 
 Duplicate-settlement verification must fail with `InvoiceNotOpen` (selector `0x094311f1` or decoded `InvoiceNotOpen()`). An unexpected successful call, unrelated revert, or RPC failure stops verification with exit code 2; these outcomes are not accepted as proof against double settlement.
+
+Transaction summaries match receipts by hash and reject missing, duplicate or failed receipts before printing. Gas usage is displayed with exact integer precision. Recipient balance parsing and invoice lookup errors stop the action. See [open issue readiness](issue-readiness.md) for the remaining acceptance requirements across all issues.
 
 ## Network (verified live 2026-11-06)
 

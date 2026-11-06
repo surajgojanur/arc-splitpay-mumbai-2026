@@ -197,6 +197,45 @@ function fixture(profile: Profile = "studio-v1") {
 }
 
 describe("read-only payment evidence verifier (deterministic fixtures)", () => {
+  it("rejects imprecise numeric deployment blocks before RPC calls", async () => {
+    const f = fixture();
+    f.client.getChainId = async () => {
+      throw new Error("RPC must not be called");
+    };
+    await expect(
+      verifyPaymentEvidence(
+        f.client,
+        {
+          ...f.deployment,
+          deploymentBlock: Number.MAX_SAFE_INTEGER + 1,
+        },
+        paymentHash,
+      ),
+    ).rejects.toThrow("Deployment metadata");
+  });
+
+  it("rejects mismatched deployment receipt hashes and payments before deployment", async () => {
+    const f = fixture();
+    const original = f.client.getTransactionReceipt;
+    f.client.getTransactionReceipt = async (args) => {
+      const receipt = await original(args);
+      return args.hash === deploymentHash
+        ? { ...receipt, transactionHash: paymentHash }
+        : receipt;
+    };
+    await expect(
+      verifyPaymentEvidence(f.client, f.deployment, paymentHash),
+    ).rejects.toThrow("Deployment receipt");
+    f.client.getTransactionReceipt = async (args) => {
+      const receipt = await original(args);
+      return args.hash === paymentHash
+        ? { ...receipt, blockNumber: 799n }
+        : receipt;
+    };
+    await expect(
+      verifyPaymentEvidence(f.client, f.deployment, paymentHash),
+    ).rejects.toThrow("predates");
+  });
   it.each(["studio-v1", "kishore-v1"] as const)(
     "verifies exact %s payment logs",
     async (profile) => {

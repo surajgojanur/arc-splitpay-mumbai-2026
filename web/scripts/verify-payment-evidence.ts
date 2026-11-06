@@ -115,6 +115,8 @@ function checkedDeployment(d: PaymentDeployment): ContractProfile {
     d.explorerUrl !== arc.blockExplorers.default.url ||
     !validHash(d.deploymentTransactionHash) ||
     !validHash(d.runtimeCodeHash) ||
+    (typeof d.deploymentBlock === "number" &&
+      !Number.isSafeInteger(d.deploymentBlock)) ||
     !/^\d+$/.test(String(d.deploymentBlock)) ||
     BigInt(d.deploymentBlock) < 0n
   )
@@ -211,6 +213,7 @@ export async function verifyPaymentEvidence(
   ]);
   if (
     deployReceipt.status !== "success" ||
+    !same(deployReceipt.transactionHash, d.deploymentTransactionHash) ||
     !deployReceipt.contractAddress ||
     !same(deployReceipt.contractAddress, d.contractAddress) ||
     deployReceipt.blockNumber !== BigInt(d.deploymentBlock)
@@ -237,6 +240,8 @@ export async function verifyPaymentEvidence(
   if (!same(tx.hash, hash) || !same(receipt.transactionHash, hash))
     fail("Transaction or receipt hash mismatch.");
   if (receipt.status !== "success") fail("Payment transaction reverted.");
+  if (receipt.blockNumber < BigInt(d.deploymentBlock))
+    fail("Payment receipt predates the contract deployment.");
 
   const abi = abis[profile];
   let call:

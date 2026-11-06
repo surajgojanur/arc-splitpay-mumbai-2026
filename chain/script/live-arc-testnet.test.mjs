@@ -23,6 +23,7 @@ before(async () => {
   await copyFile(realScript, join(root, "chain/script/live-arc-testnet.sh"));
   await copyFile(join(repo, "script/amounts.mjs"), join(root, "chain/script/amounts.mjs"));
   await copyFile(join(repo, "script/payment-invoice-id.mjs"), join(root, "chain/script/payment-invoice-id.mjs"));
+  await copyFile(join(repo, "script/broadcast-summary.mjs"), join(root, "chain/script/broadcast-summary.mjs"));
   await writeFile(join(root, "bin/cast"), `#!/usr/bin/env bash
 set -eu
 printf 'cast %s\\n' "$*" >>"$TRACE_LOG"
@@ -36,8 +37,14 @@ case "$1" in
     case "$3" in
       'usdc()(address)') echo "\${MOCK_TOKEN:-${usdc}}" ;;
       'decimals()(uint8)') echo "\${MOCK_DECIMALS:-6}" ;;
-      'balanceOf(address)(uint256)') echo "\${MOCK_TOKEN_BALANCE:-100000000}" ;;
+      'balanceOf(address)(uint256)')
+        if [[ "$4" == "${recipientA}" && -n "\${MOCK_RECIPIENT_BALANCE:-}" ]]; then
+          echo "$MOCK_RECIPIENT_BALANCE"
+        else echo "\${MOCK_TOKEN_BALANCE:-100000000}"; fi ;;
       'invoiceCount()(uint256)') echo 999 ;;
+      'getInvoice(uint256)(address,address,address,uint256,uint16,uint64,uint8)')
+        if [[ "\${MOCK_INVOICE_READ_FAIL:-}" == YES ]]; then echo 'RPC invoice lookup failed' >&2; exit 1; fi
+        echo 1 ;;
       'payInvoice(uint256)')
         case "\${MOCK_DUPLICATE_RESULT:-expected}" in
           expected) echo 'Error: execution reverted: custom error 0x094311f1' >&2; exit 1 ;;
@@ -216,6 +223,13 @@ test("zero, malformed, and underfunded payment amounts block", async () => {
   ]) await assertBlockedBeforeForge("payment", {}, { ARCSPLIT_CONFIRM_PAYMENT: "YES", ...vars });
 });
 
+test("malformed recipient balance blocks before the payment broadcast", async () => {
+  const { result } = await assertBlockedBeforeForge("payment", {}, {
+    ARCSPLIT_CONFIRM_PAYMENT: "YES", MOCK_RECIPIENT_BALANCE: "not-a-balance",
+  });
+  assert.match(result.stderr, /decimal uint256/);
+});
+
 async function deploymentEvidence(scenario = "valid") {
   const scratch = await mkdtemp(join(root, "evidence-"));
   await mkdir(join(scratch, "script"));
@@ -369,6 +383,10 @@ test("payment invoice identity comes from its own creation receipt even when rec
     const decoded = invoke("payment", { ...f.env, ARCSPLIT_CONFIRM_PAYMENT: "YES", MOCK_PAYMENT_SUCCESS: "YES", MOCK_DUPLICATE_RESULT: outcome });
     assert.equal(decoded.status, 0, decoded.stderr);
   }
+  const readFailure = invoke("payment", { ...f.env, ARCSPLIT_CONFIRM_PAYMENT: "YES", MOCK_PAYMENT_SUCCESS: "YES", MOCK_INVOICE_READ_FAIL: "YES" });
+  assert.notEqual(readFailure.status, 0);
+  assert.match(readFailure.stderr, /invoice lookup failed/);
+  assert.doesNotMatch(readFailure.stdout, /gasUsed=/);
   for (const [transactions, receipts] of [
     [[], [receipt]], [[tx, tx], [receipt]], [[tx], []], [[tx], [receipt, receipt]],
     [[tx], [{ ...receipt, status: "0x0" }]], [[tx], [{ ...receipt, logs: [] }]],
@@ -379,6 +397,34 @@ test("payment invoice identity comes from its own creation receipt even when rec
   ]) {
     const rejected = await run(transactions, receipts);
     assert.equal(rejected.status, 2, rejected.stderr);
+    assert.equal(rejected.stdout, "");
+  }
+});
+
+test("broadcast summary matches receipts by hash and preserves exact gas usage", async () => {
+  const path = join(root, "summary-broadcast.json");
+  const a = `0x${"11".repeat(32)}`, b = `0x${"22".repeat(32)}`;
+  const txs = [{ hash: a, function: "createInvoice()" }, { hash: b, function: "payInvoice()" }];
+  const receipts = [
+    { transactionHash: b, status: "0x1", gasUsed: "0x20000000000001" },
+    { transactionHash: a, status: "0x1", gasUsed: "0x10" },
+  ];
+  const run = async (transactions, rs) => {
+    await writeFile(path, JSON.stringify({ transactions, receipts: rs }));
+    return spawnSync(process.execPath, [join(repo, "script/broadcast-summary.mjs"), path], { encoding: "utf8" });
+  };
+  const valid = await run(txs, receipts);
+  assert.equal(valid.status, 0, valid.stderr);
+  assert.match(valid.stdout, /createInvoice\(\).*gasUsed=16/);
+  assert.match(valid.stdout, /payInvoice\(\).*gasUsed=9007199254740993/);
+  for (const [transactions, rs] of [
+    [txs, []], [txs, [receipts[0]]], [txs, [...receipts, receipts[0]]],
+    [txs, [{ ...receipts[0], status: "0x0" }, receipts[1]]],
+    [txs, [{ ...receipts[0], gasUsed: "invalid" }, receipts[1]]],
+    [[txs[0], txs[0]], receipts],
+  ]) {
+    const rejected = await run(transactions, rs);
+    assert.equal(rejected.status, 2);
     assert.equal(rejected.stdout, "");
   }
 });
