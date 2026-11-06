@@ -31,7 +31,7 @@ case "$1" in
   code) echo "\${MOCK_CODE:-0x6000}" ;;
   keccak) echo "\${MOCK_RUNTIME_HASH:-${runtimeHash}}" ;;
   call)
-    case "$2" in
+    case "$3" in
       'usdc()(address)') echo "\${MOCK_TOKEN:-${usdc}}" ;;
       'decimals()(uint8)') echo "\${MOCK_DECIMALS:-6}" ;;
       'balanceOf(address)(uint256)') echo "\${MOCK_TOKEN_BALANCE:-100000000}" ;;
@@ -56,7 +56,7 @@ after(async () => {
   if (root) await rm(root, { recursive: true, force: true });
 });
 
-async function fixture({ profile = "kishore-v1", sourceCommit = mockHead, withEnv = true, withMetadata = true } = {}) {
+async function fixture({ profile = "kishore-v1", sourceCommit = mockHead, withEnv = true, withMetadata = true, envValues = {} } = {}) {
   const chain = join(root, "chain");
   await rm(join(chain, ".env"), { force: true });
   await rm(join(chain, "deployment-profile.json"), { force: true });
@@ -64,11 +64,12 @@ async function fixture({ profile = "kishore-v1", sourceCommit = mockHead, withEn
   const trace = join(root, `trace-${Math.random()}.log`);
   await writeFile(join(chain, "deployment-profile.json"), JSON.stringify({ approved: true, profile, sourceCommit }));
   if (withEnv) {
-    await writeFile(join(chain, ".env"), [
-      "PRIVATE_KEY=TEST-ONLY-NOT-A-KEY", "ARC_TESTNET_RPC_URL=https://rpc.testnet.arc.io",
-      `ARCSPLIT_ADDRESS=${chainAddress}`, `RECIPIENT_A=${recipientA}`, `RECIPIENT_B=${recipientB}`,
-      "DEMO_AMOUNT=1000000", `ARCSPLIT_RUNTIME_CODE_HASH=${runtimeHash}`,
-    ].join("\n") + "\n");
+    const values = {
+      PRIVATE_KEY: "TEST-ONLY-NOT-A-KEY", ARC_TESTNET_RPC_URL: "https://rpc.testnet.arc.io",
+      ARCSPLIT_ADDRESS: chainAddress, RECIPIENT_A: recipientA, RECIPIENT_B: recipientB,
+      DEMO_AMOUNT: "1000000", ARCSPLIT_RUNTIME_CODE_HASH: runtimeHash, ...envValues,
+    };
+    await writeFile(join(chain, ".env"), Object.entries(values).map(([key, value]) => `${key}='${String(value).replaceAll("'", "'\\''")}'`).join("\n") + "\n");
   }
   if (withMetadata) {
     await mkdir(join(chain, "deployments"), { recursive: true });
@@ -91,7 +92,7 @@ async function traceText(path) {
   try { return await readFile(path, "utf8"); } catch { return ""; }
 }
 async function assertBlockedBeforeForge(action, options = {}, vars = {}) {
-  const f = await fixture(options);
+  const f = await fixture({ ...options, envValues: vars });
   const result = invoke(action, { ...f.env, ...vars });
   const trace = await traceText(f.trace);
   assert.notEqual(result.status, 0, `${action} unexpectedly passed its safety gates`);
@@ -182,14 +183,35 @@ test("wrong onchain token, decimals, runtime code, or empty code block payment",
 });
 
 test("invalid or duplicate recipients and contract recipient block payment", async () => {
-  for (const vars of [
-    { RECIPIENT_A: "" }, { RECIPIENT_A: recipientA, RECIPIENT_B: recipientA },
-    { RECIPIENT_A: chainAddress, RECIPIENT_B: recipientB }, { RECIPIENT_A: `0x${"00".repeat(20)}` },
-  ]) await assertBlockedBeforeForge("payment", {}, { ARCSPLIT_CONFIRM_PAYMENT: "YES", ...vars });
+  for (const [vars, message] of [
+    [{ RECIPIENT_A: "" }, /configure two valid recipient/],
+    [{ RECIPIENT_A: recipientA, RECIPIENT_B: recipientA }, /recipient addresses must differ/],
+    [{ RECIPIENT_A: chainAddress, RECIPIENT_B: recipientB }, /contract cannot receive/],
+    [{ RECIPIENT_A: `0x${"00".repeat(20)}` }, /configure two valid recipient/],
+  ]) {
+    const { result } = await assertBlockedBeforeForge("payment", {}, { ARCSPLIT_CONFIRM_PAYMENT: "YES", ...vars });
+    assert.match(result.stderr, message);
+  }
 });
 
 test("zero, malformed, and underfunded payment amounts block", async () => {
   for (const vars of [
     { DEMO_AMOUNT: "0" }, { DEMO_AMOUNT: "1.5" }, { DEMO_AMOUNT: "100000001", MOCK_TOKEN_BALANCE: "100000000" },
   ]) await assertBlockedBeforeForge("payment", {}, { ARCSPLIT_CONFIRM_PAYMENT: "YES", ...vars });
+});
+
+test("valid payment reaches only the Forge stub on the system Bash", async () => {
+  const f = await fixture();
+  const result = invoke("payment", { ...f.env, ARCSPLIT_CONFIRM_PAYMENT: "YES" });
+  assert.equal(result.status, 97, result.stderr);
+  assert.match(await traceText(f.trace), /forge .*--broadcast/);
+});
+
+test("mixed-case reviewed hashes and contract addresses work on system Bash", async () => {
+  const f = await fixture({ envValues: {
+    ARCSPLIT_RUNTIME_CODE_HASH: `0x${"AB".repeat(32)}`, ARCSPLIT_ADDRESS: `0x${"CC".repeat(20)}`,
+  } });
+  const result = invoke("payment", { ...f.env, ARCSPLIT_CONFIRM_PAYMENT: "YES", MOCK_RUNTIME_HASH: `0x${"ab".repeat(32)}` });
+  assert.equal(result.status, 97, result.stderr);
+  assert.match(await traceText(f.trace), /forge .*--broadcast/);
 });
