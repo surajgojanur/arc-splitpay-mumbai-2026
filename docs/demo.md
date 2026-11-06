@@ -32,3 +32,29 @@ Passed locally with Node v22.23.1: `npm ci`, `npm run typecheck`, `npm run lint`
 Screenshots in `web/public/screenshots/`: landing.png, wallet-disconnected.png, invoice-form.png, validation-errors.png, invoice-preview.png, payment-pending.png, receipt.png, mobile-landing.png, mobile-receipt.png. All are fixture evidence only. Desktop landing, payout preview and mobile receipt were visually inspected.
 
 `npm audit --omit=dev` found zero production vulnerabilities. Full `npm audit` reports 8 moderate findings in the development lint dependency chain through minimatch; unresolved, no forced major downgrade applied. These are not evidence of contract security. No actual wallet USDC payment or recipient receipt has been verified.
+
+## Studio integration validation — 2026-11-06
+
+The downloaded Studio export is now available and preserved. Its shareable project URL is still missing. Separate independent contracts exist: Studio source (`docs/studio-original/`) and Kishore PR #9 (`a3ac1b7`); neither is deployed. Contract-owner source/profile selection and actual payment evidence remain mandatory.
+
+Fresh local Foundry 1.7.1 results in isolated temporary copies:
+
+- Studio: `forge clean`, `forge build`, `forge test -vv`: **60 passed / 0 failed / 0 skipped**, including both full default invariant runs (146 seconds). Solc 0.8.28, OpenZeppelin 5.6.1, exported forge-std. Fresh ABI exactly equals exported Studio and handoff ABI; handoff SHA256 manifest passes.
+- Kishore: `npm ci`, `forge build`, `forge test -vv`: **48 passed / 0 failed / 0 skipped**. Published ABI equals freshly compiled ABI. No change to his branch/files.
+
+Frontend: clean install, TypeScript, lint, **59 unit tests**, production build and **4 Chromium scenarios** passed locally. Unit tests cover profile ABI/configuration validation, 6-decimal conversions and payouts, RPC/bytecode/token/receipt gates, network/account mismatch, wallet rejection, balance/allowance, expiry/cancellation/duplicate guards, exact approvals, confirmed create/pay/cancel, decoded events and both transfers, simulation failure, timeout hash preservation/recovery and amount limits. The metadata CLI was tested with synthetic metadata only in a separate scratch directory; real config remains null.
+
+An initial browser attempt reused an old port-3000 server and could not find the new tab. Tests now start their own server on port 3107 with reuse disabled. One screenshot-heavy scenario exceeded the prior 30-second total during a busy run; its total budget is now 90 seconds with the same assertions, and the full rerun passed in 12.4 seconds. No other user's server was stopped.
+
+New screenshots: `web/public/screenshots/integration/` contains the nine fixture captures plus desktop/mobile undeployed live view. All nine original screenshot files remain unchanged. Mobile viewport 390 × 844 has no horizontal overflow. Live undeployed mobile layout was visually inspected. Service tests use synthetic transports/logs and are not evidence of a real chain payment.
+
+Updated submission gates:
+
+- [x] Actual Studio export source and architecture preserved with hashes
+- [x] Both Solidity suites independently reproduced
+- [x] Explicit live ABI adapters and guarded frontend implemented
+- [ ] Kishore source/profile decision and review approval
+- [ ] Dedicated approved team-wallet deployment (not authorized in this task)
+- [ ] Genuine Arc Testnet split and receipt/balance proof
+- [ ] Judge-openable Studio project/share URL, original chat/screenshots
+- [ ] Final Studio demonstration, video and presentation
