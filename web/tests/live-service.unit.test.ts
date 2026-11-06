@@ -524,6 +524,54 @@ describe("ABI and deployment gates", () => {
 describe.each(["studio-v1", "kishore-v1"] as const)(
   "%s live adapter",
   (profile) => {
+    const calldataMismatches: Array<{
+      index: number;
+      value: unknown;
+      label: string;
+    }> =
+      profile === "studio-v1"
+        ? [
+            { index: 0, value: b, label: "payer" },
+            { index: 1, value: b, label: "recipient A" },
+            { index: 2, value: a, label: "recipient B" },
+            { index: 3, value: 99999999n, label: "amount" },
+            { index: 4, value: 6999, label: "share A" },
+            { index: 5, value: 3001, label: "share B" },
+            { index: 6, value: 1999n, label: "expiry" },
+            {
+              index: 7,
+              value: `0x${"11".repeat(32)}`,
+              label: "reference hash",
+            },
+          ]
+        : [
+            { index: 0, value: b, label: "recipient A" },
+            { index: 1, value: a, label: "recipient B" },
+            { index: 2, value: 99999999n, label: "amount" },
+            { index: 3, value: 6999, label: "share" },
+            { index: 4, value: 1999n, label: "expiry" },
+          ];
+    const eventMismatches: Array<Record<string, unknown>> =
+      profile === "studio-v1"
+        ? [
+            { payer: b },
+            { creator: b },
+            { recipientA: b },
+            { recipientB: a },
+            { amount: 99999999n },
+            { bpsA: 6999 },
+            { bpsB: 2999 },
+            { expiry: 1999n },
+            { referenceHash: `0x${"11".repeat(32)}` },
+          ]
+        : [
+            { payer: b },
+            { recipientA: b },
+            { recipientB: a },
+            { amount: 99999999n },
+            { shareBps: 6999 },
+            { expiry: 1999n },
+          ];
     function setup() {
       const g = new FakeGateway(profile);
       const states: TxState[] = [];
@@ -533,54 +581,58 @@ describe.each(["studio-v1", "kishore-v1"] as const)(
         s: new LiveInvoiceService(g, config(profile), (x) => states.push(x)),
       };
     }
-    it("fails closed when recovered create calldata differs from the persisted intent", async () => {
-      const { g } = setup();
-      const store = new MemoryRecoveryStore();
-      const s = new LiveInvoiceService(g, config(profile), () => {});
-      await s.initializeRecovery(store);
-      g.timeout = true;
-      await expect(s.createInvoice(draft, payer)).rejects.toThrow("timeout");
-      const call = g.last!;
-      const args = [...(call.args ?? [])];
-      if (profile === "studio-v1") args[1] = b;
-      else args[0] = b;
-      g.last = { ...call, args };
-      const restored = new LiveInvoiceService(
-        g,
-        config(profile),
-        () => {},
-        true,
-      );
-      await restored.initializeRecovery(store);
-      g.timeout = false;
-      await expect(restored.recoverPending()).rejects.toThrow(
-        "calldata does not match",
-      );
-      expect(restored.pendingHash).toBe(txHash);
-      expect(g.sent).toHaveLength(1);
-    });
-    it("does not accept a creation event with a mismatched share or expiry", async () => {
-      const { g } = setup();
-      const store = new MemoryRecoveryStore();
-      const s = new LiveInvoiceService(g, config(profile), () => {});
-      await s.initializeRecovery(store);
-      g.timeout = true;
-      await expect(s.createInvoice(draft, payer)).rejects.toThrow("timeout");
-      g.createEventOverrides =
-        profile === "studio-v1" ? { bpsB: 2999 } : { expiry: 1999n };
-      const restored = new LiveInvoiceService(
-        g,
-        config(profile),
-        () => {},
-        true,
-      );
-      await restored.initializeRecovery(store);
-      g.timeout = false;
-      await expect(restored.recoverPending()).rejects.toThrow(
-        "matching invoice creation event",
-      );
-      expect(restored.pendingHash).toBe(txHash);
-    });
+    it.each(calldataMismatches)(
+      "fails closed when recovered create calldata changes $label",
+      async ({ index, value }) => {
+        const { g } = setup();
+        const store = new MemoryRecoveryStore();
+        const s = new LiveInvoiceService(g, config(profile), () => {});
+        await s.initializeRecovery(store);
+        g.timeout = true;
+        await expect(s.createInvoice(draft, payer)).rejects.toThrow("timeout");
+        const call = g.last!;
+        const args = [...(call.args ?? [])];
+        args[index] = value;
+        g.last = { ...call, args };
+        const restored = new LiveInvoiceService(
+          g,
+          config(profile),
+          () => {},
+          true,
+        );
+        await restored.initializeRecovery(store);
+        g.timeout = false;
+        await expect(restored.recoverPending()).rejects.toThrow(
+          "calldata does not match",
+        );
+        expect(restored.pendingHash).toBe(txHash);
+        expect(g.sent).toHaveLength(1);
+      },
+    );
+    it.each(eventMismatches)(
+      "does not accept a creation event with mismatched fields %#",
+      async (overrides) => {
+        const { g } = setup();
+        const store = new MemoryRecoveryStore();
+        const s = new LiveInvoiceService(g, config(profile), () => {});
+        await s.initializeRecovery(store);
+        g.timeout = true;
+        await expect(s.createInvoice(draft, payer)).rejects.toThrow("timeout");
+        g.createEventOverrides = overrides;
+        const restored = new LiveInvoiceService(
+          g,
+          config(profile),
+          () => {},
+          true,
+        );
+        await restored.initializeRecovery(store);
+        g.timeout = false;
+        await expect(restored.recoverPending()).rejects.toThrow(
+          "matching invoice creation event",
+        );
+        expect(restored.pendingHash).toBe(txHash);
+      },
+    );
     it("normalizes exact invoice model and six-decimal funding", async () => {
       const { s } = setup();
       const i = await s.getInvoice(1n);
