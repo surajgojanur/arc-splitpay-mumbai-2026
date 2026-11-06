@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import {
   encodeAbiParameters,
+  encodeFunctionData,
   getAbiItem,
   getEventSelector,
   keccak256,
@@ -22,6 +23,7 @@ import {
   type TxState,
 } from "../lib/live-service";
 import { USDC } from "../lib/network";
+import { recoveryStorageKey, type RecoveryStore } from "../lib/tx-recovery";
 import {
   FIXTURE_PAYER as payer,
   FIXTURE_A as a,
@@ -31,6 +33,24 @@ const contract = "0x4444444444444444444444444444444444444444" as Address;
 const deployHash = `0x${"aa".repeat(32)}` as Hash;
 const txHash = `0x${"bb".repeat(32)}` as Hash;
 const code = "0x60006000" as Hex;
+class MemoryRecoveryStore implements RecoveryStore {
+  values = new Map<string, string>();
+  failRead = false;
+  failWrite = false;
+  failRemove = false;
+  read(key: string) {
+    if (this.failRead) throw new Error("storage disabled");
+    return this.values.get(key) ?? null;
+  }
+  write(key: string, value: string) {
+    if (this.failWrite) throw new Error("storage disabled");
+    this.values.set(key, value);
+  }
+  remove(key: string) {
+    if (this.failRemove) throw new Error("storage disabled");
+    this.values.delete(key);
+  }
+}
 function config(profile: Profile = "studio-v1") {
   return {
     profile,
@@ -60,6 +80,15 @@ function log(
             inputs: [
               { name: "from", type: "address", indexed: true },
               { name: "to", type: "address", indexed: true },
+              { name: "value", type: "uint256", indexed: false },
+            ],
+          },
+          {
+            type: "event",
+            name: "Approval",
+            inputs: [
+              { name: "owner", type: "address", indexed: true },
+              { name: "spender", type: "address", indexed: true },
               { name: "value", type: "uint256", indexed: false },
             ],
           },
@@ -94,6 +123,7 @@ class FakeGateway implements Gateway {
   walletId = 5042002;
   rpcId = 5042002;
   selected: Address = payer;
+  lastAccount: Address = payer;
   creator: Address = a;
   runtime: Hex = code;
   token: Address = USDC;
@@ -105,6 +135,7 @@ class FakeGateway implements Gateway {
   timeout = false;
   omitTransfers = false;
   wrongEventAddress = false;
+  createEventOverrides: Record<string, unknown> = {};
   simulateError = false;
   constructor(profile: Profile = "studio-v1") {
     this.profile = profile;
@@ -155,23 +186,37 @@ class FakeGateway implements Gateway {
   async simulate() {
     if (this.simulateError) throw new Error("simulation reverted");
   }
-  async send(call: Call) {
+  async send(call: Call, account: Address) {
     if (this.reject)
       throw Object.assign(new Error("User rejected"), { code: 4001 });
     this.sent.push(call);
     this.last = call;
+    this.lastAccount = account;
     return txHash;
+  }
+  async transaction(hash: Hash) {
+    if (!this.last || hash !== txHash) return null;
+    return {
+      hash,
+      from: this.lastAccount,
+      to: this.last.address,
+      input: encodeFunctionData({
+        abi: this.last.abi,
+        functionName: this.last.functionName,
+        args: this.last.args,
+      }),
+    };
+  }
+  applyEffect() {
+    if (this.fail) return;
+    if (this.last?.functionName === "approve") this.allowance = 100000000n;
+    if (["settleInvoice", "payInvoice"].includes(this.last?.functionName || ""))
+      this.status = 2;
+    if (this.last?.functionName === "cancelInvoice") this.status = 3;
   }
   async confirm() {
     if (this.timeout) throw new Error("Confirmation timeout");
-    if (!this.fail) {
-      if (this.last?.functionName === "approve") this.allowance = 100000000n;
-      if (
-        ["settleInvoice", "payInvoice"].includes(this.last?.functionName || "")
-      )
-        this.status = 2;
-      if (this.last?.functionName === "cancelInvoice") this.status = 3;
-    }
+    this.applyEffect();
     return this.receipt(txHash);
   }
   async receipt(hash: Hash): Promise<Receipt> {
@@ -183,6 +228,7 @@ class FakeGateway implements Gateway {
         contractAddress: contract,
         logs: [],
       };
+    this.applyEffect();
     return {
       status: this.fail ? "reverted" : "success",
       transactionHash: txHash,
@@ -191,12 +237,29 @@ class FakeGateway implements Gateway {
     };
   }
   transactionLogs() {
+    if (this.last?.functionName === "approve")
+      return [
+        log(
+          this.profile,
+          "Approval",
+          {
+            owner: this.lastAccount,
+            spender: contract,
+            value: this.last.args?.[1] ?? 100000000n,
+          },
+          true,
+        ),
+      ];
     const event =
       this.last?.functionName === "createInvoice"
         ? "InvoiceCreated"
         : this.last?.functionName === "cancelInvoice"
           ? "InvoiceCancelled"
-          : "InvoicePaid";
+          : this.profile === "studio-v1"
+            ? "InvoicePaid"
+            : "InvoicePaid";
+    const createArgs =
+      this.last?.functionName === "createInvoice" ? (this.last.args ?? []) : [];
     const args = {
       id: 1n,
       creator: payer,
@@ -211,10 +274,34 @@ class FakeGateway implements Gateway {
       referenceHash: `0x${"00".repeat(32)}`,
       payoutA: 70000000n,
       payoutB: 30000000n,
-      cancelledBy: this.selected,
+      cancelledBy: this.lastAccount,
+      ...(this.last?.functionName === "createInvoice"
+        ? this.profile === "studio-v1"
+          ? {
+              creator: createArgs.length ? this.lastAccount : payer,
+              payer: createArgs[0],
+              recipientA: createArgs[1],
+              recipientB: createArgs[2],
+              amount: createArgs[3],
+              bpsA: createArgs[4],
+              bpsB: createArgs[5],
+              expiry: createArgs[6],
+              referenceHash: createArgs[7],
+            }
+          : {
+              payer: this.lastAccount,
+              recipientA: createArgs[0],
+              recipientB: createArgs[1],
+              amount: createArgs[2],
+              shareBps: createArgs[3],
+              expiry: createArgs[4],
+            }
+        : {}),
+      ...this.createEventOverrides,
     };
     const e = log(this.profile, event, args);
     if (this.wrongEventAddress) e.address = a;
+    if (event !== "InvoicePaid") return [e];
     return [
       e,
       ...(this.omitTransfers
@@ -319,6 +406,54 @@ describe.each(["studio-v1", "kishore-v1"] as const)(
         s: new LiveInvoiceService(g, config(profile), (x) => states.push(x)),
       };
     }
+    it("fails closed when recovered create calldata differs from the persisted intent", async () => {
+      const { g } = setup();
+      const store = new MemoryRecoveryStore();
+      const s = new LiveInvoiceService(g, config(profile), () => {});
+      await s.initializeRecovery(store);
+      g.timeout = true;
+      await expect(s.createInvoice(draft, payer)).rejects.toThrow("timeout");
+      const call = g.last!;
+      const args = [...(call.args ?? [])];
+      if (profile === "studio-v1") args[1] = b;
+      else args[0] = b;
+      g.last = { ...call, args };
+      const restored = new LiveInvoiceService(
+        g,
+        config(profile),
+        () => {},
+        true,
+      );
+      await restored.initializeRecovery(store);
+      g.timeout = false;
+      await expect(restored.recoverPending()).rejects.toThrow(
+        "calldata does not match",
+      );
+      expect(restored.pendingHash).toBe(txHash);
+      expect(g.sent).toHaveLength(1);
+    });
+    it("does not accept a creation event with a mismatched share or expiry", async () => {
+      const { g } = setup();
+      const store = new MemoryRecoveryStore();
+      const s = new LiveInvoiceService(g, config(profile), () => {});
+      await s.initializeRecovery(store);
+      g.timeout = true;
+      await expect(s.createInvoice(draft, payer)).rejects.toThrow("timeout");
+      g.createEventOverrides =
+        profile === "studio-v1" ? { bpsB: 2999 } : { expiry: 1999n };
+      const restored = new LiveInvoiceService(
+        g,
+        config(profile),
+        () => {},
+        true,
+      );
+      await restored.initializeRecovery(store);
+      g.timeout = false;
+      await expect(restored.recoverPending()).rejects.toThrow(
+        "matching invoice creation event",
+      );
+      expect(restored.pendingHash).toBe(txHash);
+    });
     it("normalizes exact invoice model and six-decimal funding", async () => {
       const { s } = setup();
       const i = await s.getInvoice(1n);
@@ -414,16 +549,48 @@ describe.each(["studio-v1", "kishore-v1"] as const)(
       expect(states.at(-1)?.phase).toBe("error");
       expect(states.at(-1)?.hash).toBe(txHash);
     });
-    it("retains submitted hash after timeout and blocks retries until recovered", async () => {
-      const { g, s, states } = setup();
+    it("restores a timeout after service recreation and recovers read-only", async () => {
+      const { g, states } = setup();
+      const store = new MemoryRecoveryStore();
+      const s = new LiveInvoiceService(g, config(profile), (x) =>
+        states.push(x),
+      );
+      await s.initializeRecovery(store);
       g.timeout = true;
       await expect(s.approve(1n, payer)).rejects.toThrow("timeout");
       expect(s.pendingHash).toBe(txHash);
       expect(states.at(-1)?.hash).toBe(txHash);
       await expect(s.approve(1n, payer)).rejects.toThrow("unresolved");
       expect(g.sent).toHaveLength(1);
-      await s.recoverPending();
-      expect(s.pendingHash).toBeUndefined();
+      const key = recoveryStorageKey({
+        chainId: 5042002,
+        contractAddress: contract,
+        profile,
+      });
+      expect(JSON.parse(store.values.get(key)!)).toMatchObject({
+        version: 2,
+        createIntent: null,
+        hash: txHash,
+        operation: "approve",
+        account: payer,
+        invoiceId: "1",
+        amount: "100000000",
+      });
+      const restored = new LiveInvoiceService(
+        g,
+        config(profile),
+        (x) => states.push(x),
+        true,
+      );
+      await restored.initializeRecovery(store);
+      expect(restored.pendingHash).toBe(txHash);
+      g.timeout = false;
+      const recovered = await restored.recoverPending();
+      expect(recovered.receipt.transactionHash).toBe(txHash);
+      expect(restored.pendingHash).toBeUndefined();
+      expect(store.values.has(key)).toBe(false);
+      expect(g.sent).toHaveLength(1);
+      expect(states.at(-1)?.message).toContain("not payment evidence");
     });
     it("does not accept foreign events or missing USDC transfer proof", async () => {
       const { g, s } = setup();
@@ -432,10 +599,13 @@ describe.each(["studio-v1", "kishore-v1"] as const)(
       await expect(s.payInvoice(1n, payer)).rejects.toThrow(
         "both expected USDC",
       );
+      expect(s.pendingHash).toBe(txHash);
+      await expect(s.payInvoice(1n, payer)).rejects.toThrow("unresolved");
+      await expect(s.recoverPending()).rejects.toThrow("both expected USDC");
       g.status = 1;
       g.omitTransfers = false;
       g.wrongEventAddress = true;
-      await expect(s.payInvoice(1n, payer)).rejects.toThrow(
+      await expect(s.recoverPending()).rejects.toThrow(
         "InvoicePaid event missing",
       );
     });
@@ -445,8 +615,284 @@ describe.each(["studio-v1", "kishore-v1"] as const)(
       await expect(s.approve(1n, payer)).rejects.toThrow("simulation");
       expect(g.sent).toHaveLength(0);
     });
+    it.each(["create", "pay", "cancel"] as const)(
+      "recovers a pending %s operation without resubmitting",
+      async (operation) => {
+        const { g, states } = setup();
+        const store = new MemoryRecoveryStore();
+        const s = new LiveInvoiceService(g, config(profile), (x) =>
+          states.push(x),
+        );
+        await s.initializeRecovery(store);
+        if (operation === "pay") g.allowance = 100000000n;
+        g.timeout = true;
+        if (operation === "create")
+          await expect(s.createInvoice(draft, payer)).rejects.toThrow(
+            "timeout",
+          );
+        else if (operation === "pay")
+          await expect(s.payInvoice(1n, payer)).rejects.toThrow("timeout");
+        else
+          await expect(s.cancelInvoice(1n, payer)).rejects.toThrow("timeout");
+        const restored = new LiveInvoiceService(
+          g,
+          config(profile),
+          () => {},
+          true,
+        );
+        await restored.initializeRecovery(store);
+        g.timeout = false;
+        const result = await restored.recoverPending();
+        expect(result.invoiceId).toBe(1n);
+        expect(restored.pendingHash).toBeUndefined();
+        expect(g.sent).toHaveLength(1);
+      },
+    );
   },
 );
+
+it("fails closed on corrupted persisted recovery without crashing", async () => {
+  const g = new FakeGateway();
+  const store = new MemoryRecoveryStore();
+  const key = recoveryStorageKey({
+    chainId: 5042002,
+    contractAddress: contract,
+    profile: "studio-v1",
+  });
+  store.values.set(key, '{"version":99}');
+  const service = new LiveInvoiceService(g, config(), () => {}, true);
+  await service.initializeRecovery(store);
+  expect(service.recoveryIssue).toContain("unsupported shape");
+  await expect(service.approve(1n, payer)).rejects.toThrow(
+    "Live transactions are blocked",
+  );
+  expect(g.sent).toHaveLength(0);
+});
+
+it("blocks malformed persisted create intents before any transaction can be sent", async () => {
+  const g = new FakeGateway();
+  const store = new MemoryRecoveryStore();
+  const key = recoveryStorageKey({
+    chainId: 5042002,
+    contractAddress: contract,
+    profile: "studio-v1",
+  });
+  store.values.set(
+    key,
+    JSON.stringify({
+      version: 2,
+      chainId: 5042002,
+      contractAddress: contract,
+      profile: "studio-v1",
+      account: payer,
+      operation: "create",
+      invoiceId: null,
+      amount: null,
+      hash: txHash,
+      createdAt: Date.now(),
+      createIntent: {
+        payer,
+        creator: payer,
+        recipientA: a,
+        recipientB: b,
+        amount: "100000000",
+        shareBps: 7000,
+        expiry: "not-a-number",
+        referenceHash: `0x${"00".repeat(32)}`,
+      },
+    }),
+  );
+  const service = new LiveInvoiceService(g, config(), () => {}, true);
+  await service.initializeRecovery(store);
+  expect(service.recoveryIssue).toContain("creation intent is invalid");
+  await expect(service.createInvoice(draft, payer)).rejects.toThrow(
+    "Live transactions are blocked",
+  );
+  expect(g.sent).toHaveLength(0);
+});
+
+it("rejects unsupported recovery versions with the expected schema", async () => {
+  const g = new FakeGateway();
+  const store = new MemoryRecoveryStore();
+  const key = recoveryStorageKey({
+    chainId: 5042002,
+    contractAddress: contract,
+    profile: "studio-v1",
+  });
+  store.values.set(
+    key,
+    JSON.stringify({
+      version: 3,
+      chainId: 5042002,
+      contractAddress: contract,
+      profile: "studio-v1",
+      account: payer,
+      operation: "pay",
+      invoiceId: "1",
+      amount: null,
+      createIntent: null,
+      hash: txHash,
+      createdAt: Date.now(),
+    }),
+  );
+  const service = new LiveInvoiceService(g, config(), () => {}, true);
+  await service.initializeRecovery(store);
+  expect(service.recoveryIssue).toContain("unsupported version");
+  await expect(service.payInvoice(1n, payer)).rejects.toThrow(
+    "unsupported version",
+  );
+  expect(g.sent).toHaveLength(0);
+});
+
+it("does not attach a saved record to a different ABI profile", async () => {
+  const g = new FakeGateway();
+  const store = new MemoryRecoveryStore();
+  const key = recoveryStorageKey({
+    chainId: 5042002,
+    contractAddress: contract,
+    profile: "studio-v1",
+  });
+  store.values.set(
+    key,
+    JSON.stringify({
+      version: 2,
+      chainId: 5042002,
+      contractAddress: contract,
+      profile: "kishore-v1",
+      account: payer,
+      operation: "pay",
+      invoiceId: "1",
+      amount: null,
+      createIntent: null,
+      hash: txHash,
+      createdAt: Date.now(),
+    }),
+  );
+  const service = new LiveInvoiceService(
+    g,
+    config("studio-v1"),
+    () => {},
+    true,
+  );
+  await service.initializeRecovery(store);
+  expect(service.recoveryIssue).toContain(
+    "different contract, network, or ABI profile",
+  );
+  expect(service.pendingHash).toBeUndefined();
+  await expect(service.payInvoice(1n, payer)).rejects.toThrow(
+    "Live transactions are blocked",
+  );
+  expect(g.sent).toHaveLength(0);
+});
+
+it("retains the recovery lock when the RPC cannot find the submitted transaction", async () => {
+  const g = new FakeGateway();
+  const store = new MemoryRecoveryStore();
+  const service = new LiveInvoiceService(g, config(), () => {});
+  await service.initializeRecovery(store);
+  g.timeout = true;
+  await expect(service.approve(1n, payer)).rejects.toThrow("timeout");
+  g.transaction = async () => null;
+  await expect(service.recoverPending()).rejects.toThrow(
+    "not available from the RPC yet",
+  );
+  expect(service.pendingHash).toBe(txHash);
+  await expect(service.approve(1n, payer)).rejects.toThrow("unresolved");
+  expect(g.sent).toHaveLength(1);
+});
+
+it("keeps the lock when the recovery RPC is on the wrong network", async () => {
+  const g = new FakeGateway();
+  const store = new MemoryRecoveryStore();
+  const service = new LiveInvoiceService(g, config(), () => {});
+  await service.initializeRecovery(store);
+  g.timeout = true;
+  await expect(service.approve(1n, payer)).rejects.toThrow("timeout");
+  g.timeout = false;
+  g.rpcId = 1;
+  await expect(service.recoverPending()).rejects.toThrow(
+    "RPC network mismatch",
+  );
+  expect(service.pendingHash).toBe(txHash);
+  expect(g.sent).toHaveLength(1);
+});
+
+it("degrades cleanly when browser storage cannot be read", async () => {
+  const g = new FakeGateway();
+  const store = new MemoryRecoveryStore();
+  store.failRead = true;
+  const service = new LiveInvoiceService(g, config(), () => {});
+  await expect(service.initializeRecovery(store)).resolves.toBeUndefined();
+  expect(service.persistenceWarning).toContain(
+    "cannot be recovered after a reload",
+  );
+  expect(service.recoveryIssue).toBeUndefined();
+  expect(service.isRecoveryReady).toBe(true);
+});
+
+it("keeps the in-memory lock and warns when browser storage is unavailable", async () => {
+  const g = new FakeGateway();
+  const store = new MemoryRecoveryStore();
+  store.failWrite = true;
+  const states: TxState[] = [];
+  const service = new LiveInvoiceService(g, config(), (state) =>
+    states.push(state),
+  );
+  await service.initializeRecovery(store);
+  g.timeout = true;
+  await expect(service.approve(1n, payer)).rejects.toThrow("timeout");
+  expect(service.pendingHash).toBe(txHash);
+  expect(service.persistenceWarning).toContain("will not survive a reload");
+  expect(states.at(-1)?.message).toContain("Browser storage is unavailable");
+  expect(g.sent).toHaveLength(1);
+});
+
+it("releases a persisted transaction only after a mined revert is verified", async () => {
+  const g = new FakeGateway();
+  const store = new MemoryRecoveryStore();
+  const service = new LiveInvoiceService(g, config(), () => {});
+  await service.initializeRecovery(store);
+  g.timeout = true;
+  await expect(service.approve(1n, payer)).rejects.toThrow("timeout");
+  g.fail = true;
+  g.timeout = false;
+  const outcome = await service.recoverPending();
+  expect(outcome.receipt.status).toBe("reverted");
+  expect(service.pendingHash).toBeUndefined();
+  expect(g.sent).toHaveLength(1);
+  await expect(service.approve(1n, payer)).rejects.toThrow("reverted");
+  expect(g.sent).toHaveLength(2);
+});
+
+it("rejects a transaction whose recovered sender does not match the saved wallet", async () => {
+  const g = new FakeGateway();
+  const store = new MemoryRecoveryStore();
+  const service = new LiveInvoiceService(g, config(), () => {});
+  await service.initializeRecovery(store);
+  g.timeout = true;
+  await expect(service.approve(1n, payer)).rejects.toThrow("timeout");
+  g.timeout = false;
+  g.lastAccount = a;
+  await expect(service.recoverPending()).rejects.toThrow("originating wallet");
+  expect(service.pendingHash).toBe(txHash);
+  expect(g.sent).toHaveLength(1);
+});
+
+it("does not associate a persisted operation with a different wallet", async () => {
+  const g = new FakeGateway();
+  const store = new MemoryRecoveryStore();
+  const service = new LiveInvoiceService(g, config(), () => {});
+  await service.initializeRecovery(store);
+  g.timeout = true;
+  await expect(service.approve(1n, payer)).rejects.toThrow("timeout");
+  const restored = new LiveInvoiceService(g, config(), () => {});
+  await restored.initializeRecovery(store);
+  g.selected = a;
+  await expect(restored.approve(1n, a)).rejects.toThrow("unresolved");
+  g.timeout = false;
+  await expect(restored.recoverPending()).resolves.toBeTruthy();
+  expect(g.sent).toHaveLength(1);
+});
 it("maps decoded custom errors for recovery", () => {
   expect(
     friendlyError({ cause: { data: { errorName: "InvoiceExpired" } } }),

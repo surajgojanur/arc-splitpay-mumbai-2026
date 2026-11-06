@@ -7,3 +7,5 @@ web/next-env.d.ts
 web/public/screenshots/
 web/test-results/
 docs/studio-original/
+# Preserve the standalone Studio export byte-for-byte; it is not in the npm workspace.
+arcsplit_usdc_invoice_distribution_4zjjiq/

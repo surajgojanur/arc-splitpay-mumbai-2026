@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { type Address } from "viem";
 import config from "../config/deployment.json";
 import { parseDeployment } from "../lib/deployment";
@@ -13,6 +13,7 @@ import {
 import { liveGateway } from "../lib/live-gateway";
 import { money, split, validate, type Draft } from "../lib/invoice";
 import { type useWallet } from "../lib/wallet";
+import { browserRecoveryStore } from "../lib/tx-recovery";
 export default function LivePanel({
   wallet,
 }: {
@@ -21,11 +22,12 @@ export default function LivePanel({
   const [state, setState] = useState<TxState>();
   const [service] = useState(() => {
     try {
-      return new LiveInvoiceService(liveGateway, config, setState);
+      return new LiveInvoiceService(liveGateway, config, setState, true);
     } catch {
       return undefined;
     }
   });
+  const [recoveryReady, setRecoveryReady] = useState(() => !service);
   const [verified, setVerified] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -45,6 +47,16 @@ export default function LivePanel({
     expiry: "",
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!service) return;
+    let active = true;
+    void service.initializeRecovery(browserRecoveryStore()).finally(() => {
+      if (active) setRecoveryReady(true);
+    });
+    return () => {
+      active = false;
+    };
+  }, [service]);
   let configError = "";
   try {
     parseDeployment(config);
@@ -52,6 +64,8 @@ export default function LivePanel({
     configError = friendlyError(e);
   }
   const currentDraft = { ...draft, payer: wallet.address || "" };
+  const writeLocked =
+    !recoveryReady || !!service?.pendingHash || !!service?.recoveryIssue;
   async function refresh(s: LiveInvoiceService, i: LiveInvoice) {
     setInvoice(i);
     setId(String(i.id));
@@ -153,7 +167,7 @@ export default function LivePanel({
           {state.hash && (
             <a
               className="explorer-link address"
-              href={`https://explorer.testnet.arc.io/tx/${state.hash}`}
+              href={`${service?.deployment.explorerUrl || "https://explorer.testnet.arc.io"}/tx/${state.hash}`}
               target="_blank"
               rel="noreferrer"
             >
@@ -162,22 +176,46 @@ export default function LivePanel({
           )}
         </div>
       )}
+      {service?.persistenceWarning && !service.pendingHash && (
+        <div className="notice" role="status">
+          {service.persistenceWarning}
+        </div>
+      )}
+      {service?.recoveryIssue && (
+        <div className="notice error" role="alert">
+          {service.recoveryIssue} Inspect the Arc Testnet wallet activity and
+          browser storage record before enabling another transaction.
+        </div>
+      )}
       {service?.pendingHash && (
-        <div className="notice">
+        <div className="notice" role="status">
           <p>
-            Confirmation is unresolved. Check the submitted transaction before
-            sending another.
+            {service.pendingTransaction?.operation} transaction is unresolved
+            for {service.pendingTransaction?.account}. Check this original
+            transaction before sending another.
           </p>
+          {wallet.address &&
+            wallet.address.toLowerCase() !==
+              service.pendingTransaction?.account.toLowerCase() && (
+              <p className="error">
+                Connected wallet differs from the wallet that submitted this
+                transaction. Recovery will only inspect the saved transaction.
+              </p>
+            )}
+          {wallet.address && wallet.chainId !== service.deployment.chainId && (
+            <p className="error">
+              Wallet is on the wrong network. Recovery uses read-only Arc
+              Testnet RPC and will not request a signature.
+            </p>
+          )}
           <button
             disabled={busy}
             onClick={() =>
               void run(async (s) => {
-                const receipt = await s.recoverPending();
-                const created = s.events(receipt, "InvoiceCreated")[0];
-                if (created && typeof created.id === "bigint")
-                  await refresh(s, await s.getInvoice(created.id));
-                else if (invoice)
-                  await refresh(s, await s.getInvoice(invoice.id));
+                const recovered = await s.recoverPending();
+                const id =
+                  recovered.invoiceId ?? s.pendingTransaction?.invoiceId;
+                if (id) await refresh(s, await s.getInvoice(BigInt(id)));
               }, false)
             }
           >
@@ -202,7 +240,7 @@ export default function LivePanel({
           {field("expiry", "Live expiry (local time)", "datetime-local")}
           <button
             className="button wide"
-            disabled={!service || !wallet.address || busy}
+            disabled={!service || !wallet.address || busy || writeLocked}
             type="submit"
           >
             Create invoice on Arc Testnet
@@ -370,6 +408,7 @@ export default function LivePanel({
               className="button secondary wide"
               disabled={
                 busy ||
+                writeLocked ||
                 !wallet.address ||
                 invoice.status !== "open" ||
                 wallet.address.toLowerCase() !== invoice.payer.toLowerCase() ||
@@ -388,6 +427,7 @@ export default function LivePanel({
               className="button wide"
               disabled={
                 busy ||
+                writeLocked ||
                 !wallet.address ||
                 invoice.status !== "open" ||
                 wallet.address.toLowerCase() !== invoice.payer.toLowerCase() ||
@@ -407,6 +447,7 @@ export default function LivePanel({
               className="text-button"
               disabled={
                 busy ||
+                writeLocked ||
                 !wallet.address ||
                 invoice.status !== "open" ||
                 (wallet.address.toLowerCase() !== invoice.payer.toLowerCase() &&

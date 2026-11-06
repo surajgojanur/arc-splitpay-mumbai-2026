@@ -1,7 +1,10 @@
 import { test, expect } from "@playwright/test";
 import path from "node:path";
 const shot = (name: string) =>
-  path.resolve("public/screenshots/integration", `${name}.png`);
+  path.resolve(
+    process.env.ARCSPLIT_SCREENSHOT_DIR || "public/screenshots/integration",
+    `${name}.png`,
+  );
 test("fixture invoice validation, preview, rejection, pending, recovery and receipt", async ({
   page,
 }) => {
