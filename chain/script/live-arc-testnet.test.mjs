@@ -21,6 +21,7 @@ before(async () => {
   await mkdir(join(root, "chain/script"), { recursive: true });
   await mkdir(join(root, "bin"));
   await copyFile(realScript, join(root, "chain/script/live-arc-testnet.sh"));
+  await copyFile(join(repo, "script/amounts.mjs"), join(root, "chain/script/amounts.mjs"));
   await writeFile(join(root, "bin/cast"), `#!/usr/bin/env bash
 set -eu
 printf 'cast %s\\n' "$*" >>"$TRACE_LOG"
@@ -214,4 +215,38 @@ test("mixed-case reviewed hashes and contract addresses work on system Bash", as
   const result = invoke("payment", { ...f.env, ARCSPLIT_CONFIRM_PAYMENT: "YES", MOCK_RUNTIME_HASH: `0x${"ab".repeat(32)}` });
   assert.equal(result.status, 97, result.stderr);
   assert.match(await traceText(f.trace), /forge .*--broadcast/);
+});
+
+test("native balance above signed 64-bit range remains positive", async () => {
+  const f = await fixture();
+  const result = invoke("deploy", { ...f.env, ARCSPLIT_CONFIRM_DEPLOY: "YES", MOCK_NATIVE_BALANCE: "10000000000000000000" });
+  assert.equal(result.status, 97, result.stderr);
+});
+
+test("underfunded amounts cannot pass through integer wraparound", async () => {
+  const { result } = await assertBlockedBeforeForge("payment", {}, {
+    ARCSPLIT_CONFIRM_PAYMENT: "YES", DEMO_AMOUNT: "18446744073709551617", MOCK_TOKEN_BALANCE: "1",
+  });
+  assert.match(result.stderr, /payer needs enough/);
+});
+
+test("large sufficient token balances reach only the Forge stub", async () => {
+  const f = await fixture();
+  const result = invoke("payment", { ...f.env, ARCSPLIT_CONFIRM_PAYMENT: "YES", MOCK_TOKEN_BALANCE: "10000000000000000000" });
+  assert.equal(result.status, 97, result.stderr);
+});
+
+test("amount arithmetic preserves uint256 limits and signed recipient deltas", () => {
+  const run = (...args) => spawnSync(process.execPath, [join(repo, "script/amounts.mjs"), ...args], { encoding: "utf8" });
+  const max = ((1n << 256n) - 1n).toString();
+  assert.equal(run("enough", max, max).status, 0);
+  assert.equal(run("enough", "0", "1").status, 1);
+  assert.equal(run("delta", "0", max).stdout.trim(), max);
+  assert.equal(run("delta", max, "0").stdout.trim(), `-${max}`);
+  assert.equal(run("delta", "18446744073709551616", "18446744073709551617").stdout.trim(), "1");
+  for (const value of ["-1", "1.5", "0x10", "01", "", "garbage", (1n << 256n).toString()]) {
+    assert.equal(run("enough", value, "1").status, 2, value);
+    assert.equal(run("enough", max, value).status, 2, value);
+    assert.equal(run("delta", "0", value).status, 2, value);
+  }
 });

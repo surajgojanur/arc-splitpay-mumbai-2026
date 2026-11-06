@@ -59,7 +59,7 @@ USDC="0x3600000000000000000000000000000000000000"
 ME="$(cast wallet address --private-key "$PRIVATE_KEY")"
 NATIVE_BAL="$(cast balance "$ME" --rpc-url "$RPC" | awk '{print $1}')"
 echo "Deployer $ME; native gas-token balance (USDC, 18 decimals): $NATIVE_BAL"
-[[ "$NATIVE_BAL" =~ ^[0-9]+$ && "$NATIVE_BAL" -gt 0 ]] || {
+node script/amounts.mjs enough "$NATIVE_BAL" 1 || {
   echo "BLOCKED: deployer needs native USDC for Arc Testnet gas; this is separate from ERC-20 USDC." >&2
   exit 2
 }
@@ -110,7 +110,7 @@ PAYMENT_AMOUNT="${DEMO_AMOUNT:-1000000}"
 }
 TOKEN_BAL="$(cast call "$USDC" 'balanceOf(address)(uint256)' "$ME" --rpc-url "$RPC" | awk '{print $1}')"
 echo "Payer ERC-20 USDC balance (6 decimals): $TOKEN_BAL; demo amount: $PAYMENT_AMOUNT"
-[[ "$TOKEN_BAL" =~ ^[0-9]+$ && "$TOKEN_BAL" -ge "$PAYMENT_AMOUNT" ]] || {
+node script/amounts.mjs enough "$TOKEN_BAL" "$PAYMENT_AMOUNT" || {
   echo "BLOCKED: payer needs enough official ERC-20 USDC for DEMO_AMOUNT." >&2
   exit 2
 }
@@ -135,7 +135,9 @@ B0="$(bal "$RECIPIENT_B")"
 forge script script/DemoPayment.s.sol --rpc-url "$RPC" --broadcast --private-key "$PRIVATE_KEY"
 A1="$(bal "$RECIPIENT_A")"
 B1="$(bal "$RECIPIENT_B")"
-echo "recipient A delta: $((A1 - A0)); recipient B delta: $((B1 - B0))"
+DELTA_A="$(node script/amounts.mjs delta "$A0" "$A1")"
+DELTA_B="$(node script/amounts.mjs delta "$B0" "$B1")"
+echo "recipient A delta: $DELTA_A; recipient B delta: $DELTA_B"
 
 ID="$(cast call "$ARCSPLIT_ADDRESS" 'invoiceCount()(uint256)' --rpc-url "$RPC" | awk '{print $1}')"
 echo "invoice $ID: $(cast call "$ARCSPLIT_ADDRESS" 'getInvoice(uint256)(address,address,address,uint256,uint16,uint64,uint8)' "$ID" --rpc-url "$RPC" | tr '\n' ' ')"
