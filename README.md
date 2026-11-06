@@ -4,7 +4,7 @@ One invoice. Two contributors. One payment.
 
 A mobile-friendly USDC invoice splitter targeting **Best Smart Contracts with Advanced Stablecoin Logic, In Arc Studio** at ETHGlobal Mumbai 2026.
 
-**Status: Studio export preserved and live frontend integration prepared. Both Studio and Kishore contracts are tested but undeployed. Studio share URL, contract-owner source selection and real USDC payment proof remain pending. Not submission-ready.**
+**Status: fixture app and live-read-only verification are tested; deployment remains disabled. The proposed Studio-derived candidate passes CI but lacks Kishore approval. The judge-openable Studio URL, final source selection and real USDC payment proof remain pending. Not submission-ready.**
 
 ## Run
 
@@ -42,6 +42,6 @@ GitHub uses one-based issue numbers:
 - [Submission package (#6)](https://github.com/surajgojanur/arc-splitpay-mumbai-2026/issues/6)
 - [Studio access blocker (#7)](https://github.com/surajgojanur/arc-splitpay-mumbai-2026/issues/7)
 
-The fixture frontend passes 17 unit tests and 3 Chromium browser scenarios. See [validation and screenshot evidence](docs/demo.md#frontend-validation-evidence--2026-11-06).
+Current verification: 115 frontend unit tests and 5 Chromium scenarios pass; the browser suite checks the 390×844 invoice form and clean console/page-error state. GitHub Actions reports 49/49 Kishore contract tests, 64/64 proposed candidate tests, 12/12 deployment-gate tests, and compiled Studio ABI identity. See [validation and submission evidence](docs/submission/evidence-manifest.md) and the [readiness update](docs/reviews/2026-11-06-submission-readiness-update.md).
 
 ![ArcSplit fixture preview](web/public/screenshots/landing.png)

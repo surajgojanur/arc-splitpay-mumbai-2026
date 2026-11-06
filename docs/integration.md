@@ -1,6 +1,8 @@
 # Integration handoff
 
-Branch `feat/suraj-arcstudio-integration` is stacked on `feat/suraj-frontend` (PR #8, commit 454a084). Review this integration against that branch to avoid duplicating PR #8. Neither #8 nor Kishore PR #9 is merged automatically. Original checkout and its untracked Studio download are preserved; integration uses the separate `/home/god/Documents/github/arc-splitpay-integration` worktree.
+**Historical handoff:** this document was drafted before frontend PR #8, contract PR #9 and recovery/deployment PRs #11–#13 were merged. The branch, PR and old worktree references below describe that earlier integration point. Current checkout and test evidence are in [README](../README.md), [submission setup](submission/README.md), and the [readiness update](reviews/2026-11-06-submission-readiness-update.md).
+
+At the time of writing, branch `feat/suraj-arcstudio-integration` was stacked on `feat/suraj-frontend` (PR #8, commit 454a084), PR #8 and Kishore PR #9 were still under review, and the integration used `/home/god/Documents/github/arc-splitpay-integration`. That work has since been merged; those branch/worktree instructions are historical.
 
 ## Actual code and ownership
 
