@@ -54,10 +54,10 @@ USDC="0x3600000000000000000000000000000000000000"
 }
 
 ME="$(cast wallet address --private-key "$PRIVATE_KEY")"
-BAL="$(cast call "$USDC" 'balanceOf(address)(uint256)' "$ME" --rpc-url "$RPC" | awk '{print $1}')"
-echo "Deployer $ME; USDC ERC-20 balance (6 decimals): $BAL"
-[[ "$BAL" -ge 2000000 ]] || {
-  echo "BLOCKED: expected at least 2 USDC for the later demo and gas." >&2
+NATIVE_BAL="$(cast balance "$ME" --rpc-url "$RPC" | awk '{print $1}')"
+echo "Deployer $ME; native gas-token balance (USDC, 18 decimals): $NATIVE_BAL"
+[[ "$NATIVE_BAL" =~ ^[0-9]+$ && "$NATIVE_BAL" -gt 0 ]] || {
+  echo "BLOCKED: deployer needs native USDC for Arc Testnet gas; this is separate from ERC-20 USDC." >&2
   exit 2
 }
 
@@ -98,6 +98,17 @@ CODE="$(cast code "$ARCSPLIT_ADDRESS" --rpc-url "$RPC")"
 }
 [[ "$(cast call "$USDC" 'decimals()(uint8)' --rpc-url "$RPC")" == "6" ]] || {
   echo "BLOCKED: official USDC ERC-20 decimals check failed." >&2
+  exit 2
+}
+PAYMENT_AMOUNT="${DEMO_AMOUNT:-1000000}"
+[[ "$PAYMENT_AMOUNT" =~ ^[1-9][0-9]*$ ]] || {
+  echo "BLOCKED: DEMO_AMOUNT must be a positive integer in ERC-20 USDC atomic units (6 decimals)." >&2
+  exit 2
+}
+TOKEN_BAL="$(cast call "$USDC" 'balanceOf(address)(uint256)' "$ME" --rpc-url "$RPC" | awk '{print $1}')"
+echo "Payer ERC-20 USDC balance (6 decimals): $TOKEN_BAL; demo amount: $PAYMENT_AMOUNT"
+[[ "$TOKEN_BAL" =~ ^[0-9]+$ && "$TOKEN_BAL" -ge "$PAYMENT_AMOUNT" ]] || {
+  echo "BLOCKED: payer needs enough official ERC-20 USDC for DEMO_AMOUNT." >&2
   exit 2
 }
 for recipient in "${RECIPIENT_A:-}" "${RECIPIENT_B:-}"; do
