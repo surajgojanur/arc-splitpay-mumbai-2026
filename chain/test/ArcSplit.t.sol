@@ -6,6 +6,7 @@ import {ArcSplit} from "../src/ArcSplit.sol";
 import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {MockUSDC, Mock18, FalseReturnToken, BlockingToken, ReentrantToken} from "./mocks/Mocks.sol";
 
 contract ArcSplitTest is Test {
@@ -191,10 +192,12 @@ contract ArcSplitTest is Test {
         assertEq(usdc.balanceOf(bob), 1);
     }
 
-    function test_create_overflowAmountReverts() public {
+    function test_create_maxAmountAccepted() public {
         vm.prank(payer);
-        vm.expectRevert(); // checked arithmetic panic in amount * shareBps
-        split.createInvoice(alice, bob, type(uint256).max, SHARE_70, expiry);
+        uint256 id = split.createInvoice(alice, bob, type(uint256).max, SHARE_70, expiry);
+        (,,, uint256 amount,,, uint8 status) = split.getInvoice(id);
+        assertEq(amount, type(uint256).max);
+        assertEq(status, uint8(ArcSplit.Status.Open));
     }
 
     // ───────────────────────── pay ─────────────────────────
@@ -436,12 +439,29 @@ contract ArcSplitTest is Test {
 
     // ───────────────────────── fuzz ─────────────────────────
 
-    function testFuzz_previewPayoutsSumsExactly(uint128 amount, uint16 shareBps) public view {
+    function testFuzz_previewPayoutsSumsExactly(uint256 amount, uint16 shareBps) public view {
         shareBps = uint16(bound(shareBps, 1, 9_999));
         (uint256 a, uint256 b) = split.previewPayouts(amount, shareBps);
         assertEq(a + b, amount);
-        assertEq(a, (uint256(amount) * shareBps) / 10_000);
-        assertLe(a * 10_000, uint256(amount) * shareBps);
+        assertEq(a, Math.mulDiv(amount, shareBps, 10_000));
+    }
+
+    function test_preview_maxAmountAndBoundaryShares() public view {
+        uint256 amount = type(uint256).max;
+        (uint256 a, uint256 b) = split.previewPayouts(amount, 9_999);
+        assertEq(a, Math.mulDiv(amount, 9_999, 10_000));
+        assertEq(a + b, amount);
+        (a, b) = split.previewPayouts(amount, 0);
+        assertEq(a, 0);
+        assertEq(b, amount);
+        (a, b) = split.previewPayouts(amount, 10_000);
+        assertEq(a, amount);
+        assertEq(b, 0);
+    }
+
+    function test_preview_rejectsShareAboveDenominator() public {
+        vm.expectRevert(ArcSplit.InvalidShare.selector);
+        split.previewPayouts(1, 10_001);
     }
 
     function testFuzz_payDistributesExactTotal(uint64 amount, uint16 shareBps) public {

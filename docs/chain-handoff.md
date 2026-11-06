@@ -86,6 +86,7 @@ viem/wagmi decode these automatically from the ABI (it includes the errors). Map
 
 - All amounts are USDC atomic units, **6 decimals**: `parseUnits("100", 6) = 100000000n`. Use bigint, never floats.
 - `payoutA = amount * shareBps / 10000` (floor), `payoutB = amount - payoutA`, so the sum is always exactly `amount`. Rounding dust goes to B.
+- The independent `kishore-v1` implementation computes that floor using quotient/remainder decomposition to support the full `uint256` amount range without intermediate overflow. Preview permits shares 0..10000 and rejects larger values with `InvalidShare`; invoice creation still requires 1..9999 and two nonzero payouts.
 - 70/30 → `shareBps = 7000`. 100 USDC → A `70000000`, B `30000000`.
 - Expiry is unix **seconds** (`uint64`). Use the chain's clock for comparisons when possible.
 
