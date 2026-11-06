@@ -4,6 +4,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# macOS ships Bash 3.2, which does not support ${value,,} case conversion.
+lower() { printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]'; }
+
 ACTION="${1:-}"
 case "$ACTION" in
   deploy)
@@ -88,11 +91,11 @@ node --input-type=module -e '
   exit 2
 }
 CODE="$(cast code "$ARCSPLIT_ADDRESS" --rpc-url "$RPC")"
-[[ "$CODE" != "0x" && "$(cast keccak "$CODE")" == "${ARCSPLIT_RUNTIME_CODE_HASH,,}" ]] || {
+[[ "$CODE" != "0x" && "$(cast keccak "$CODE")" == "$(lower "$ARCSPLIT_RUNTIME_CODE_HASH")" ]] || {
   echo "BLOCKED: deployed runtime code hash does not match the reviewed value." >&2
   exit 2
 }
-[[ "$(cast call "$ARCSPLIT_ADDRESS" 'usdc()(address)' --rpc-url "$RPC" | tr '[:upper:]' '[:lower:]')" == "${USDC,,}" ]] || {
+[[ "$(cast call "$ARCSPLIT_ADDRESS" 'usdc()(address)' --rpc-url "$RPC" | tr '[:upper:]' '[:lower:]')" == "$(lower "$USDC")" ]] || {
   echo "BLOCKED: selected contract reports a different USDC token." >&2
   exit 2
 }
@@ -112,16 +115,16 @@ echo "Payer ERC-20 USDC balance (6 decimals): $TOKEN_BAL; demo amount: $PAYMENT_
   exit 2
 }
 for recipient in "${RECIPIENT_A:-}" "${RECIPIENT_B:-}"; do
-  [[ "$recipient" =~ ^0x[0-9a-fA-F]{40}$ ]] || {
+  [[ "$recipient" =~ ^0x[0-9a-fA-F]{40}$ && "$recipient" != "0x0000000000000000000000000000000000000000" ]] || {
     echo "BLOCKED: configure two valid recipient addresses in .env." >&2
     exit 2
   }
 done
-[[ "${RECIPIENT_A,,}" != "${RECIPIENT_B,,}" ]] || {
+[[ "$(lower "$RECIPIENT_A")" != "$(lower "$RECIPIENT_B")" ]] || {
   echo "BLOCKED: recipient addresses must differ." >&2
   exit 2
 }
-[[ "${RECIPIENT_A,,}" != "${ARCSPLIT_ADDRESS,,}" && "${RECIPIENT_B,,}" != "${ARCSPLIT_ADDRESS,,}" ]] || {
+[[ "$(lower "$RECIPIENT_A")" != "$(lower "$ARCSPLIT_ADDRESS")" && "$(lower "$RECIPIENT_B")" != "$(lower "$ARCSPLIT_ADDRESS")" ]] || {
   echo "BLOCKED: the contract cannot receive its own split payout." >&2
   exit 2
 }
