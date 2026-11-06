@@ -1,0 +1,38 @@
+name: Solidity checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "chain/**"
+      - "docs/studio-original/**"
+      - ".github/workflows/chain.yml"
+jobs:
+  foundry:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: chain/package-lock.json
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+      - run: npm ci
+        working-directory: chain
+      - run: forge build
+        working-directory: chain
+      - run: forge test -vv
+        working-directory: chain
+      - run: node --test script/live-arc-testnet.test.mjs
+        working-directory: chain
+      - run: npm ci
+        working-directory: chain/studio-candidate
+      - run: forge build
+        working-directory: chain/studio-candidate
+      - run: forge test -vv
+        working-directory: chain/studio-candidate
+      - run: node ../script/check-studio-abi.mjs
+        working-directory: chain/studio-candidate
