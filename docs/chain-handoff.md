@@ -1,6 +1,6 @@
 # ArcSplit chain handoff (Kishore → Suraj)
 
-Owner: Kishore (`chain/**`, this file). Interface agreed-in-principle per proposal in `docs/architecture.md`; confirmation requested in issue #1.
+Owner: Kishore (`chain/**`, this file). The proposed final source/profile decision for issue #1 is now [the pinned Studio-derived `studio-v1` candidate](../chain/studio-candidate/README.md). Owner acknowledgements remain required; deployment is not authorized. The contract details below describe the independent **`kishore-v1`** implementation only, not the proposed Studio selection.
 
 ## Status (2026-11-06)
 

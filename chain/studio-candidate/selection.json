@@ -1,0 +1,12 @@
+{
+  "issue": 1,
+  "profile": "studio-v1",
+  "status": "proposed-for-review",
+  "baselineCommit": "25a77da4214919e031f9ff6734edc296aa8c8b29",
+  "sha256": {
+    "src/ArcSplit.sol": "b2153300ac74afac853d03916a1b867a6ce2223922d5bc21ca5faeaccff6e474",
+    "abi/ArcSplit.studio-v1.json": "1c1d603aa96a6e025664926e4604319146b0f40d8eee0ef5a0732ed2e6b6de60",
+    "foundry.toml": "f8f7f2921829f25826c36584960e056a4b97f3164b663b5818c0168f25b31d3d",
+    "package-lock.json": "c76a9a94336b5ce639894c381518ad9772ef2c9a28263b60cd16b7df6c1d7ad1"
+  }
+}
