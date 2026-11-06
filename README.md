@@ -22,6 +22,8 @@ npm run test:e2e
 
 Open http://localhost:3000. Fixture views show DEMO DATA and never sign transfers. The separate Live payments tab uses actual ABI profiles, requires verified deployment configuration and deliberately requested wallet signatures. Without a deployed contract it shows “Contract not deployed — testnet payments unavailable.”
 
+If a submitted live transaction times out, its hash is saved locally and the live write controls stay locked across reloads until the original transaction is checked. Recovery is read-only and never resubmits; payment success still requires the verified invoice event and both exact USDC transfers. Browser storage failure is surfaced because reload recovery then cannot be guaranteed.
+
 ## Team and handoff
 
 Suraj owns frontend, root config and submission docs. Kishore owns `chain/**` and `docs/chain-handoff.md`. See [contribution protocol](CONTRIBUTING.md), [architecture and proposed ABI](docs/architecture.md), [Studio blocker and exact prompt](docs/arc-studio.md), [demo checklist](docs/demo.md) and [AI disclosure](AI_USAGE.md).

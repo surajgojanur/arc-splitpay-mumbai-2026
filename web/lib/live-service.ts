@@ -1,5 +1,6 @@
 import {
   decodeEventLog,
+  decodeFunctionData,
   erc20Abi,
   getAddress,
   isAddress,
@@ -14,6 +15,13 @@ import { abis } from "./contracts/profiles";
 import { parseDeployment, type Deployment } from "./deployment";
 import { split, type Draft, fromDraft } from "./invoice";
 import { USDC } from "./network";
+import {
+  parsePendingTransaction,
+  recoveryStorageKey,
+  type PendingTransaction,
+  type RecoveryOperation,
+  type RecoveryStore,
+} from "./tx-recovery";
 export type Call = {
   address: Address;
   abi: Abi;
@@ -45,6 +53,12 @@ export interface Gateway {
   send(call: Call, account: Address): Promise<Hash>;
   confirm(hash: Hash): Promise<Receipt>;
   receipt(hash: Hash): Promise<Receipt>;
+  transaction(hash: Hash): Promise<{
+    hash: Hash;
+    from: Address;
+    to: Address | null;
+    input: Hex;
+  } | null>;
   block(number?: bigint): Promise<{ number: bigint; timestamp: bigint }>;
   logs(
     address: Address,
@@ -129,35 +143,139 @@ export class LiveInvoiceService {
   readonly deployment: Deployment;
   readonly abi: Abi;
   private busy = false;
-  private unresolvedHash?: Hash;
+  private pending?: PendingTransaction;
+  private recoveryStore?: RecoveryStore;
+  private persisted = false;
+  private recoveryReady = true;
+  private recoveryProblem?: string;
+  private recoveryStorageWarning?: string;
   private submittedHash?: Hash;
   get pendingHash() {
-    return this.unresolvedHash;
+    return this.pending?.hash;
   }
-  async recoverPending() {
-    if (!this.unresolvedHash) throw new Error("No unresolved transaction.");
-    const hash = this.unresolvedHash;
-    const receipt = await this.gateway.receipt(hash);
-    if (receipt.transactionHash !== hash)
-      throw new Error("Receipt hash mismatch.");
-    this.unresolvedHash = undefined;
-    this.notify({
-      phase: receipt.status === "success" ? "confirmed" : "error",
-      hash,
-      message:
-        receipt.status === "success"
-          ? "Submitted transaction confirmed. Refresh the invoice before any further action."
-          : "Submitted transaction reverted. No payout occurred.",
-    });
-    return receipt;
+  get pendingTransaction() {
+    return this.pending;
+  }
+  get recoveryIssue() {
+    return this.recoveryProblem;
+  }
+  get persistenceWarning() {
+    return this.recoveryStorageWarning;
+  }
+  get isRecoveryReady() {
+    return this.recoveryReady;
   }
   constructor(
     readonly gateway: Gateway,
     config: unknown,
     readonly notify: (s: TxState) => void = () => {},
+    deferRecovery = false,
   ) {
     this.deployment = parseDeployment(config);
     this.abi = abis[this.deployment.profile];
+    this.recoveryReady = !deferRecovery;
+  }
+  async initializeRecovery(store: RecoveryStore) {
+    this.recoveryStore = store;
+    try {
+      const raw = store.read(recoveryStorageKey(this.deployment));
+      if (raw !== null) {
+        this.pending = parsePendingTransaction(raw, this.deployment);
+        this.persisted = true;
+        this.notify({
+          phase: "pending",
+          hash: this.pending.hash,
+          message: `Recovered unresolved ${this.pending.operation} transaction. Check the original transaction before retrying.`,
+        });
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Browser storage is unavailable.";
+      if (message.startsWith("Saved transaction")) {
+        this.recoveryProblem = `${message} Live transactions are blocked until this local record is reconciled.`;
+      } else {
+        this.recoveryStorageWarning =
+          "Browser storage is unavailable. Pending hashes cannot be recovered after a reload.";
+      }
+    } finally {
+      this.recoveryReady = true;
+    }
+  }
+  async recoverPending() {
+    const record = this.pending;
+    if (!record) throw new Error("No unresolved transaction.");
+    this.recoveryReady = true;
+    try {
+      if ((await this.gateway.chainId()) !== record.chainId)
+        throw new Error(
+          "RPC network mismatch. Recovery is read-only and requires the configured Arc Testnet RPC.",
+        );
+      let transaction: Awaited<ReturnType<Gateway["transaction"]>>;
+      try {
+        transaction = await this.gateway.transaction(record.hash);
+      } catch {
+        throw new Error(
+          "Transaction details are not available from RPC yet. Keep the recovery lock and check again later.",
+        );
+      }
+      if (!transaction)
+        throw new Error(
+          "Transaction is not available from the RPC yet. Keep the recovery lock and check again later.",
+        );
+      this.verifyTransactionEnvelope(record, transaction);
+      let receipt: Receipt;
+      try {
+        receipt = await this.gateway.receipt(record.hash);
+      } catch {
+        throw new Error(
+          "Transaction receipt is not available yet. Keep the recovery lock and check again later.",
+        );
+      }
+      if (receipt.transactionHash !== record.hash)
+        throw new Error(
+          "Receipt hash mismatch. The recovery lock remains active.",
+        );
+      if (receipt.status === "reverted") {
+        await this.clearPending();
+        this.notify({
+          phase: "error",
+          hash: record.hash,
+          message:
+            "Submitted transaction reverted. No split payment was completed; refresh chain state before retrying.",
+        });
+        return {
+          receipt,
+          invoiceId: record.invoiceId ? BigInt(record.invoiceId) : undefined,
+        };
+      }
+      const invoiceId = await this.verifyRecoveredOperation(record, receipt);
+      await this.clearPending();
+      const label: Record<RecoveryOperation, string> = {
+        create: "Invoice creation confirmed.",
+        approve: "USDC approval confirmed. This is not payment evidence.",
+        pay: "USDC split confirmed with the invoice event and both exact transfers.",
+        cancel: "Invoice cancellation confirmed.",
+      };
+      this.notify({
+        phase: "confirmed",
+        hash: record.hash,
+        message: label[record.operation],
+      });
+      return { receipt, invoiceId };
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unable to verify submitted transaction.";
+      this.notify({
+        phase: "error",
+        hash: record.hash,
+        message: `${message} Do not submit another transaction until this one is reconciled.`,
+      });
+      throw error;
+    }
   }
   private call(functionName: string, args: readonly unknown[] = []): Call {
     return {
@@ -166,6 +284,152 @@ export class LiveInvoiceService {
       functionName,
       args,
     };
+  }
+  private verifyTransactionEnvelope(
+    record: PendingTransaction,
+    transaction: { hash: Hash; from: Address; to: Address | null; input: Hex },
+  ) {
+    if (
+      transaction.hash !== record.hash ||
+      !same(transaction.from, record.account)
+    )
+      throw new Error(
+        "Transaction hash or originating wallet does not match the saved recovery record.",
+      );
+    const tokenApproval = record.operation === "approve";
+    const expectedTo = tokenApproval ? USDC : this.deployment.contractAddress;
+    if (!transaction.to || !same(transaction.to, expectedTo))
+      throw new Error("Transaction target does not match the saved operation.");
+    const decoded = decodeFunctionData({
+      abi: tokenApproval ? erc20Abi : this.abi,
+      data: transaction.input,
+    });
+    const expectedFunction =
+      record.operation === "create"
+        ? "createInvoice"
+        : record.operation === "approve"
+          ? "approve"
+          : record.operation === "pay"
+            ? this.deployment.profile === "studio-v1"
+              ? "settleInvoice"
+              : "payInvoice"
+            : "cancelInvoice";
+    if (decoded.functionName !== expectedFunction)
+      throw new Error("Transaction method does not match the saved operation.");
+    if (record.operation === "approve") {
+      if (
+        !decoded.args ||
+        !same(String(decoded.args[0]), this.deployment.contractAddress) ||
+        decoded.args[1] !== BigInt(record.amount!)
+      )
+        throw new Error(
+          "Approval spender or exact amount does not match the saved invoice.",
+        );
+    } else if (record.operation !== "create") {
+      if (!decoded.args || decoded.args[0] !== BigInt(record.invoiceId!))
+        throw new Error(
+          "Transaction invoice ID does not match the saved operation.",
+        );
+    }
+  }
+  private async verifyRecoveredOperation(
+    record: PendingTransaction,
+    receipt: Receipt,
+  ) {
+    if (receipt.status !== "success")
+      throw new Error("Transaction did not succeed.");
+    const id = record.invoiceId === null ? undefined : BigInt(record.invoiceId);
+    switch (record.operation) {
+      case "create": {
+        const created = this.events(receipt, "InvoiceCreated").find(
+          (event) =>
+            typeof event.id === "bigint" &&
+            (same(String(event.payer), record.account) ||
+              (this.deployment.profile === "studio-v1" &&
+                same(String(event.creator), record.account))),
+        );
+        if (!created || typeof created.id !== "bigint")
+          throw new Error(
+            "Successful receipt lacks a matching invoice creation event.",
+          );
+        return created.id;
+      }
+      case "approve": {
+        const invoice = await this.getInvoice(id!);
+        if (
+          !same(invoice.payer, record.account) ||
+          invoice.amount !== BigInt(record.amount!)
+        )
+          throw new Error(
+            "Approval recovery does not match the saved invoice wallet and amount.",
+          );
+        const approvals = receipt.logs.flatMap((log) => {
+          if (
+            !same(log.address, USDC) ||
+            log.transactionHash !== receipt.transactionHash ||
+            log.blockNumber !== receipt.blockNumber
+          )
+            return [];
+          try {
+            const event = decodeEventLog({
+              abi: erc20Abi,
+              eventName: "Approval",
+              data: log.data,
+              topics: [...log.topics],
+            });
+            return [event.args];
+          } catch {
+            return [];
+          }
+        });
+        if (
+          !approvals.some(
+            (event) =>
+              same(event.owner, record.account) &&
+              same(event.spender, this.deployment.contractAddress) &&
+              event.value === BigInt(record.amount!),
+          )
+        )
+          throw new Error(
+            "Successful receipt does not verify the exact invoice approval.",
+          );
+        return id;
+      }
+      case "pay": {
+        const invoice = await this.getInvoice(id!);
+        if (!same(invoice.payer, record.account) || invoice.status !== "paid")
+          throw new Error(
+            "Paid invoice state does not match the saved wallet and invoice.",
+          );
+        this.paymentReceipt(invoice, receipt);
+        return id;
+      }
+      case "cancel": {
+        const cancelled = this.events(receipt, "InvoiceCancelled", id).some(
+          (event) =>
+            same(
+              String(
+                this.deployment.profile === "studio-v1"
+                  ? event.cancelledBy
+                  : event.payer,
+              ),
+              record.account,
+            ),
+        );
+        if (!cancelled)
+          throw new Error(
+            "Successful receipt lacks a matching invoice cancellation event.",
+          );
+        return id;
+      }
+    }
+  }
+  private async clearPending() {
+    if (this.persisted && this.recoveryStore) {
+      this.recoveryStore.remove(recoveryStorageKey(this.deployment));
+    }
+    this.pending = undefined;
+    this.persisted = false;
   }
   async verify() {
     const d = this.deployment;
@@ -300,7 +564,13 @@ export class LiveInvoiceService {
       throw new Error("This invoice has expired.");
     return i;
   }
-  private async transaction(call: Call, caller: Address) {
+  private async transaction(
+    call: Call,
+    caller: Address,
+    operation: RecoveryOperation,
+    invoiceId?: bigint,
+    amount?: bigint,
+  ) {
     await this.wallet(caller);
     await this.gateway.simulate(call, caller);
     await this.wallet(caller);
@@ -309,26 +579,61 @@ export class LiveInvoiceService {
       message: "Confirm this transaction in your wallet.",
     });
     const hash = await this.gateway.send(call, caller);
-    this.unresolvedHash = hash;
+    this.pending = {
+      version: 1,
+      chainId: this.deployment.chainId,
+      contractAddress: this.deployment.contractAddress,
+      profile: this.deployment.profile,
+      account: address(caller),
+      operation,
+      invoiceId: invoiceId === undefined ? null : String(invoiceId),
+      amount: amount === undefined ? null : String(amount),
+      hash,
+      createdAt: Date.now(),
+    };
     this.submittedHash = hash;
+    this.persisted = false;
+    try {
+      this.recoveryStore?.write(
+        recoveryStorageKey(this.deployment),
+        JSON.stringify(this.pending),
+      );
+      this.persisted = !!this.recoveryStore;
+      this.recoveryStorageWarning = undefined;
+    } catch {
+      this.recoveryStorageWarning =
+        "Browser storage is unavailable. Keep this tab open; the pending hash will not survive a reload.";
+    }
     this.notify({
       phase: "pending",
       hash,
-      message: "Transaction submitted. Waiting for confirmation.",
+      message: this.recoveryStorageWarning
+        ? `Transaction submitted. ${this.recoveryStorageWarning}`
+        : "Transaction submitted. Waiting for confirmation.",
     });
     const receipt = await this.gateway.confirm(hash);
-    if (receipt.transactionHash === hash) this.unresolvedHash = undefined;
-    if (receipt.status !== "success" || receipt.transactionHash !== hash)
+    if (receipt.transactionHash !== hash)
       throw new Error(
         `Transaction reverted or receipt mismatch. Check ${hash} on the explorer before retrying.`,
       );
+    if (receipt.status === "reverted") {
+      await this.clearPending();
+      throw new Error(
+        `Transaction reverted. No state change was committed. Check ${hash} and refresh before retrying.`,
+      );
+    }
     return receipt;
   }
   private async guarded<T>(work: () => Promise<T>): Promise<T> {
     if (this.busy) throw new Error("A wallet operation is already pending.");
-    if (this.unresolvedHash)
+    if (!this.recoveryReady)
       throw new Error(
-        `A submitted transaction is unresolved. Check ${this.unresolvedHash} before retrying.`,
+        "Saved transaction recovery is still loading. Wait before starting a transaction.",
+      );
+    if (this.recoveryProblem) throw new Error(this.recoveryProblem);
+    if (this.pending)
+      throw new Error(
+        `A submitted transaction is unresolved. Check ${this.pending.hash} before retrying.`,
       );
     this.submittedHash = undefined;
     this.busy = true;
@@ -339,8 +644,11 @@ export class LiveInvoiceService {
       this.notify({
         phase: "error",
         hash: this.submittedHash,
-        message: this.unresolvedHash
+        message: this.pending
           ? "Confirmation unavailable. Check the submitted transaction before retrying. " +
+            (this.recoveryStorageWarning
+              ? `${this.recoveryStorageWarning} `
+              : "") +
             friendlyError(e)
           : friendlyError(e),
       });
@@ -351,7 +659,12 @@ export class LiveInvoiceService {
   }
   events(receipt: Receipt, eventName: string, id?: bigint) {
     return receipt.logs.flatMap((log) => {
-      if (!same(log.address, this.deployment.contractAddress)) return [];
+      if (
+        !same(log.address, this.deployment.contractAddress) ||
+        log.transactionHash !== receipt.transactionHash ||
+        log.blockNumber !== receipt.blockNumber
+      )
+        return [];
       try {
         const decoded = decodeEventLog({
           abi: this.abi,
@@ -411,6 +724,7 @@ export class LiveInvoiceService {
       const receipt = await this.transaction(
         this.call("createInvoice", args),
         caller,
+        "create",
       );
       const event = this.events(receipt, "InvoiceCreated").find(
         (e) =>
@@ -423,6 +737,7 @@ export class LiveInvoiceService {
         throw new Error(
           "Transaction confirmed but expected InvoiceCreated event missing. Inspect explorer before retrying.",
         );
+      await this.clearPending();
       this.notify({
         phase: "confirmed",
         hash: receipt.transactionHash,
@@ -445,12 +760,16 @@ export class LiveInvoiceService {
           args: [this.deployment.contractAddress, i.amount],
         },
         caller,
+        "approve",
+        id,
+        i.amount,
       );
       const { allowance } = await this.funding(caller);
       if (allowance < i.amount)
         throw new Error(
           "Approval confirmed but allowance is insufficient. Refresh before retrying.",
         );
+      await this.clearPending();
       this.notify({
         phase: "confirmed",
         hash: receipt.transactionHash,
@@ -477,6 +796,8 @@ export class LiveInvoiceService {
           [id],
         ),
         caller,
+        "pay",
+        id,
       );
       this.paymentReceipt(i, receipt);
       const updated = await this.getInvoice(id);
@@ -484,6 +805,7 @@ export class LiveInvoiceService {
         throw new Error(
           "Confirmed transaction but paid state unavailable. Refresh before retrying.",
         );
+      await this.clearPending();
       this.notify({
         phase: "confirmed",
         hash: receipt.transactionHash,
@@ -498,11 +820,29 @@ export class LiveInvoiceService {
       const receipt = await this.transaction(
         this.call("cancelInvoice", [id]),
         caller,
+        "cancel",
+        id,
       );
       if (!this.events(receipt, "InvoiceCancelled", id).length)
         throw new Error(
           "Cancellation event missing. Inspect the confirmed transaction.",
         );
+      const cancellation = this.events(receipt, "InvoiceCancelled", id).find(
+        (event) =>
+          same(
+            String(
+              this.deployment.profile === "studio-v1"
+                ? event.cancelledBy
+                : event.payer,
+            ),
+            caller,
+          ),
+      );
+      if (!cancellation)
+        throw new Error(
+          "Cancellation receipt does not match the submitting wallet.",
+        );
+      await this.clearPending();
       this.notify({
         phase: "confirmed",
         hash: receipt.transactionHash,
@@ -525,7 +865,12 @@ export class LiveInvoiceService {
     if (!paid)
       throw new Error("Expected InvoicePaid event missing from receipt.");
     const transfers = receipt.logs.flatMap((l) => {
-      if (!same(l.address, USDC)) return [];
+      if (
+        !same(l.address, USDC) ||
+        l.transactionHash !== receipt.transactionHash ||
+        l.blockNumber !== receipt.blockNumber
+      )
+        return [];
       try {
         const e = decodeEventLog({
           abi: erc20Abi,

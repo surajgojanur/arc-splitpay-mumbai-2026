@@ -48,6 +48,15 @@ export const liveGateway: Gateway = {
     ),
   receipt: async (hash) =>
     receipt(await publicClient.getTransactionReceipt({ hash })),
+  transaction: async (hash) => {
+    const tx = await publicClient.getTransaction({ hash });
+    return {
+      hash: tx.hash,
+      from: tx.from,
+      to: tx.to,
+      input: tx.input,
+    };
+  },
   block: async (number) => {
     const b = await publicClient.getBlock(
       number === undefined ? {} : { blockNumber: number },
