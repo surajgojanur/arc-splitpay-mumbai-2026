@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "prepare:deployment": "node --experimental-strip-types scripts/prepare-deployment.mjs"
+    "prepare:deployment": "node --experimental-strip-types scripts/prepare-deployment.mjs",
+    "verify:payment": "node --experimental-strip-types scripts/verify-payment-evidence.ts"
   },
   "dependencies": {
     "next": "16.4.5",

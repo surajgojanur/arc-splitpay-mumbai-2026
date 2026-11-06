@@ -1,0 +1,35 @@
+# ArcSplit submission evidence manifest
+
+Status reviewed 2026-11-06. “Pending” means the artifact or external action is not present in this repository; local fixtures do not satisfy onchain evidence.
+
+| Requirement                                        | Status                                                | Evidence / owner                                                                | Missing dependency                                |
+| -------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------- |
+| Public source repository                           | Available                                             | `https://github.com/surajgojanur/arc-splitpay-mumbai-2026` / Suraj              | None                                              |
+| Arc Studio share URL judges can open               | Pending                                               | No URL recorded / Suraj                                                         | Authenticated Studio project and share access     |
+| Original Studio conversation and screenshots       | Pending                                               | `docs/studio-original/` is an exported snapshot only / Suraj                    | Original Studio session evidence                  |
+| Source and ABI fingerprints                        | Available for preserved export and proposed candidate | `docs/reviews/2026-11-06-studio-candidate-readiness.md` / Kishore review needed | Owner acceptance and reproducible CI              |
+| Foundry and frontend test evidence                 | CI/local evidence                                     | Chain workflow and web checks / both owners                                     | Fresh chain CI result                             |
+| Architecture diagram                               | Available                                             | `docs/architecture.md` / Suraj                                                  | None                                              |
+| Approved contract source/profile                   | Pending                                               | Two distinct profiles are documented / Kishore                                  | Kishore's explicit profile and source approval    |
+| Contract address and deployment receipt            | Pending                                               | None / Kishore                                                                  | Approved source, wallet authorization, deployment |
+| Invoice creation transaction                       | Pending                                               | None / Suraj                                                                    | Deployed approved contract and authorized wallet  |
+| USDC approval transaction                          | Pending                                               | None / Suraj                                                                    | Real wallet action                                |
+| Settlement transaction and both USDC transfer logs | Pending                                               | Read-only verifier implementation; no real receipt / Suraj                      | Real authorized payment                           |
+| Recipient balance evidence                         | Pending                                               | No snapshots / Suraj                                                            | Real settlement; record exact block and caveat    |
+| Demo video under 3 minutes                         | Pending                                               | Plan can be drafted once live demo is available / Suraj                         | Studio access and real/demo capture               |
+| Presentation                                       | Pending                                               | Not present / Suraj                                                             | Final product and truthful evidence               |
+| Submission names and contacts                      | Pending                                               | Not added here                                                                  | Team-provided submission details                  |
+
+## Eligibility note
+
+ETHGlobal's current Arc Mumbai prize page says every Arc prize requires Arc Studio as the starting point, a judge-openable Studio project URL, Studio shown in the demo, a functional MVP and architecture diagram, video and presentation, documentation, and a repository link. The exact smart-contract bounty explicitly includes payment splitting. The preserved export and proposed source candidate do not alone establish this provenance or eligibility. See [official Arc prize requirements](https://ethglobal.com/events/mumbai/prizes/arc).
+
+## Three-minute demo outline
+
+- **0:00–0:20 — Problem:** teams need one invoice to pay two recipients atomically.
+- **0:20–0:45 — Arc Studio:** **PENDING** authentic Studio project and share URL; show the actual project and its contract history.
+- **0:45–1:20 — App:** create a 100 USDC invoice and show the 70/30 calculation. Label fixture mode as simulated if no deployment is available.
+- **1:20–1:50 — Contract:** explain the payer guard, expiry, one-time status transition, direct transfers and revert atomicity.
+- **1:50–2:25 — Chain proof:** **PENDING** real deployment, approval, settlement and receipt with both exact USDC transfer events.
+- **2:25–2:45 — Safety:** show duplicate settlement rejection and verified-versus-simulated status.
+- **2:45–3:00 — Close:** explain why USDC splitting on Arc is useful and state remaining limitations plainly.
