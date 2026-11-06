@@ -6,3 +6,4 @@ package-lock.json
 web/next-env.d.ts
 web/public/screenshots/
 web/test-results/
+docs/studio-original/

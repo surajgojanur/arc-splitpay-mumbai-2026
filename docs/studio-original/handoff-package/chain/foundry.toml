@@ -1,0 +1,27 @@
+[profile.default]
+src = "src"
+test = "test"
+script = "script"
+out = "out"
+cache_path = "cache"
+libs = ["lib"]
+solc_version = "0.8.28"
+auto_detect_solc = false
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 200
+
+[fuzz]
+runs = 256
+
+[invariant]
+runs = 256
+depth = 500
+
+# Faster local iteration: FOUNDRY_PROFILE=quick forge test
+[profile.quick.invariant]
+runs = 16
+depth = 100
+
+[rpc_endpoints]
+arc_testnet = "https://rpc.testnet.arc.io"
