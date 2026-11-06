@@ -1,0 +1,15 @@
+{
+  "name": "arc-splitpay-mumbai-2026",
+  "private": true,
+  "workspaces": [
+    "web"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w web",
+    "build": "npm run build -w web",
+    "typecheck": "npm run typecheck -w web",
+    "lint": "npm run lint -w web",
+    "test": "npm run test -w web",
+    "test:e2e": "npm run test:e2e -w web"
+  }
+}
