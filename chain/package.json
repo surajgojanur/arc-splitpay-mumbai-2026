@@ -1,0 +1,14 @@
+{
+  "name": "arcsplit-chain",
+  "private": true,
+  "description": "ArcSplit Solidity contract (Foundry). OpenZeppelin is consumed from npm so no git submodules are needed.",
+  "scripts": {
+    "build": "forge build",
+    "test": "forge test -vv",
+    "abi": "node script/export-abi.mjs"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "5.1.0",
+    "forge-std": "github:foundry-rs/forge-std#v1.9.4"
+  }
+}
