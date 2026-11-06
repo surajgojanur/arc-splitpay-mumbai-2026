@@ -289,4 +289,84 @@ describe("read-only payment evidence verifier (deterministic fixtures)", () => {
       verifyPaymentEvidence(f.client, f.deployment, "0x1234" as Hash),
     ).rejects.toThrow("Malformed");
   });
+
+  it("rejects a wrong contract target, payment method, or payer", async () => {
+    const f = fixture();
+    const original = f.client.getTransaction;
+    f.client.getTransaction = async () => ({
+      ...(await original({ hash: paymentHash }))!,
+      to: recipientA,
+    });
+    await expect(
+      verifyPaymentEvidence(f.client, f.deployment, paymentHash),
+    ).rejects.toThrow("target");
+    f.client.getTransaction = async () => ({
+      ...(await original({ hash: paymentHash }))!,
+      from: recipientA,
+    });
+    await expect(
+      verifyPaymentEvidence(f.client, f.deployment, paymentHash),
+    ).rejects.toThrow("payer");
+    f.client.getTransaction = async () => ({
+      ...(await original({ hash: paymentHash }))!,
+      input: "0x12345678",
+    });
+    await expect(
+      verifyPaymentEvidence(f.client, f.deployment, paymentHash),
+    ).rejects.toThrow("calldata");
+  });
+
+  it("rejects absent InvoicePaid evidence and logs emitted by the wrong address", async () => {
+    const f = fixture();
+    f.setReceipt({
+      transactionHash: paymentHash,
+      blockNumber,
+      status: "success",
+      logs: [f.log(USDC, f.transferA), f.log(USDC, f.transferB)],
+    });
+    await expect(
+      verifyPaymentEvidence(f.client, f.deployment, paymentHash),
+    ).rejects.toThrow("exactly one InvoicePaid");
+    f.setReceipt({
+      transactionHash: paymentHash,
+      blockNumber,
+      status: "success",
+      logs: [
+        f.log(USDC, f.paidLog),
+        f.log(USDC, f.transferA),
+        f.log(USDC, f.transferB),
+      ],
+    });
+    await expect(
+      verifyPaymentEvidence(f.client, f.deployment, paymentHash),
+    ).rejects.toThrow("exactly one InvoicePaid");
+  });
+
+  it("rejects invalid token/runtime metadata, missing transactions, and RPC failure", async () => {
+    const f = fixture();
+    await expect(
+      verifyPaymentEvidence(
+        f.client,
+        { ...f.deployment, usdcAddress: recipientA },
+        paymentHash,
+      ),
+    ).rejects.toThrow("Deployment metadata");
+    await expect(
+      verifyPaymentEvidence(
+        f.client,
+        { ...f.deployment, runtimeCodeHash: `0x${"99".repeat(32)}` as Hash },
+        paymentHash,
+      ),
+    ).rejects.toThrow("runtime code");
+    f.client.getTransaction = async () => null;
+    await expect(
+      verifyPaymentEvidence(f.client, f.deployment, paymentHash),
+    ).rejects.toThrow("not found");
+    f.client.getTransaction = async () => {
+      throw new Error("RPC unavailable");
+    };
+    await expect(
+      verifyPaymentEvidence(f.client, f.deployment, paymentHash),
+    ).rejects.toThrow("RPC unavailable");
+  });
 });
