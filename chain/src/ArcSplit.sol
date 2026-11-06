@@ -151,8 +151,12 @@ contract ArcSplit is ReentrancyGuard {
     }
 
     /// @notice Exact payouts for a given amount and share: A rounds down, B takes the remainder.
+    /// @dev Supports the full uint256 amount range; preview permits the 0% and 100% endpoints.
     function previewPayouts(uint256 amount, uint16 shareBps) public pure returns (uint256 payoutA, uint256 payoutB) {
-        payoutA = (amount * shareBps) / BPS_DENOMINATOR;
+        if (shareBps > BPS_DENOMINATOR) revert InvalidShare();
+        // Divide first and retain the remainder: identical floor rounding without amount * share overflow.
+        payoutA = (amount / BPS_DENOMINATOR) * shareBps
+            + ((amount % BPS_DENOMINATOR) * shareBps) / BPS_DENOMINATOR;
         payoutB = amount - payoutA;
     }
 }
