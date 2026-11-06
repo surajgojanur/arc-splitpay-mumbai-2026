@@ -19,6 +19,7 @@ import {
   parsePendingTransaction,
   recoveryStorageKey,
   type PendingTransaction,
+  type CreateIntent,
   type RecoveryOperation,
   type RecoveryStore,
 } from "./tx-recovery";
@@ -193,7 +194,10 @@ export class LiveInvoiceService {
         error instanceof Error
           ? error.message
           : "Browser storage is unavailable.";
-      if (message.startsWith("Saved transaction")) {
+      if (
+        message.startsWith("Saved transaction") ||
+        message.startsWith("Saved invoice")
+      ) {
         this.recoveryProblem = `${message} Live transactions are blocked until this local record is reconciled.`;
       } else {
         this.recoveryStorageWarning =
@@ -316,7 +320,35 @@ export class LiveInvoiceService {
             : "cancelInvoice";
     if (decoded.functionName !== expectedFunction)
       throw new Error("Transaction method does not match the saved operation.");
-    if (record.operation === "approve") {
+    if (record.operation === "create") {
+      const intent = record.createIntent;
+      const args = decoded.args as readonly unknown[] | undefined;
+      const amount = BigInt(intent!.amount);
+      const expiry = BigInt(intent!.expiry);
+      const matches =
+        this.deployment.profile === "studio-v1"
+          ? !!args &&
+            args.length === 8 &&
+            same(String(args[0]), intent!.payer) &&
+            same(String(args[1]), intent!.recipientA) &&
+            same(String(args[2]), intent!.recipientB) &&
+            args[3] === amount &&
+            Number(args[4]) === intent!.shareBps &&
+            Number(args[5]) === 10000 - intent!.shareBps &&
+            args[6] === expiry &&
+            same(String(args[7]), intent!.referenceHash)
+          : !!args &&
+            args.length === 5 &&
+            same(String(args[0]), intent!.recipientA) &&
+            same(String(args[1]), intent!.recipientB) &&
+            args[2] === amount &&
+            Number(args[3]) === intent!.shareBps &&
+            args[4] === expiry;
+      if (!matches)
+        throw new Error(
+          "Invoice creation calldata does not match the saved recipients, amount, shares, payer, expiry, and profile.",
+        );
+    } else if (record.operation === "approve") {
       if (
         !decoded.args ||
         !same(String(decoded.args[0]), this.deployment.contractAddress) ||
@@ -325,7 +357,7 @@ export class LiveInvoiceService {
         throw new Error(
           "Approval spender or exact amount does not match the saved invoice.",
         );
-    } else if (record.operation !== "create") {
+    } else {
       if (!decoded.args || decoded.args[0] !== BigInt(record.invoiceId!))
         throw new Error(
           "Transaction invoice ID does not match the saved operation.",
@@ -341,12 +373,21 @@ export class LiveInvoiceService {
     const id = record.invoiceId === null ? undefined : BigInt(record.invoiceId);
     switch (record.operation) {
       case "create": {
+        const intent = record.createIntent!;
         const created = this.events(receipt, "InvoiceCreated").find(
           (event) =>
             typeof event.id === "bigint" &&
-            (same(String(event.payer), record.account) ||
-              (this.deployment.profile === "studio-v1" &&
-                same(String(event.creator), record.account))),
+            same(String(event.payer), intent.payer) &&
+            same(String(event.creator ?? record.account), intent.creator) &&
+            same(String(event.recipientA), intent.recipientA) &&
+            same(String(event.recipientB), intent.recipientB) &&
+            event.amount === BigInt(intent.amount) &&
+            event.expiry === BigInt(intent.expiry) &&
+            (this.deployment.profile === "studio-v1"
+              ? event.bpsA === intent.shareBps &&
+                event.bpsB === 10000 - intent.shareBps &&
+                same(String(event.referenceHash), intent.referenceHash)
+              : event.shareBps === intent.shareBps),
         );
         if (!created || typeof created.id !== "bigint")
           throw new Error(
@@ -570,6 +611,7 @@ export class LiveInvoiceService {
     operation: RecoveryOperation,
     invoiceId?: bigint,
     amount?: bigint,
+    createIntent?: CreateIntent,
   ) {
     await this.wallet(caller);
     await this.gateway.simulate(call, caller);
@@ -580,7 +622,7 @@ export class LiveInvoiceService {
     });
     const hash = await this.gateway.send(call, caller);
     this.pending = {
-      version: 1,
+      version: 2,
       chainId: this.deployment.chainId,
       contractAddress: this.deployment.contractAddress,
       profile: this.deployment.profile,
@@ -588,6 +630,7 @@ export class LiveInvoiceService {
       operation,
       invoiceId: invoiceId === undefined ? null : String(invoiceId),
       amount: amount === undefined ? null : String(amount),
+      createIntent: createIntent ?? null,
       hash,
       createdAt: Date.now(),
     };
@@ -725,13 +768,32 @@ export class LiveInvoiceService {
         this.call("createInvoice", args),
         caller,
         "create",
+        undefined,
+        undefined,
+        {
+          payer: d.payer,
+          creator: caller,
+          recipientA: d.recipientA,
+          recipientB: d.recipientB,
+          amount: String(d.amount),
+          shareBps: d.shareBps,
+          expiry: String(expiry),
+          referenceHash: zeroHash,
+        },
       );
       const event = this.events(receipt, "InvoiceCreated").find(
         (e) =>
           same(String(e.payer), d.payer) &&
+          same(String(e.creator ?? caller), caller) &&
           e.amount === d.amount &&
           same(String(e.recipientA), d.recipientA) &&
-          same(String(e.recipientB), d.recipientB),
+          same(String(e.recipientB), d.recipientB) &&
+          e.expiry === expiry &&
+          (this.deployment.profile === "studio-v1"
+            ? e.bpsA === d.shareBps &&
+              e.bpsB === 10000 - d.shareBps &&
+              same(String(e.referenceHash), zeroHash)
+            : e.shareBps === d.shareBps),
       );
       if (!event || typeof event.id !== "bigint")
         throw new Error(

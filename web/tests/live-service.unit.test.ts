@@ -135,6 +135,7 @@ class FakeGateway implements Gateway {
   timeout = false;
   omitTransfers = false;
   wrongEventAddress = false;
+  createEventOverrides: Record<string, unknown> = {};
   simulateError = false;
   constructor(profile: Profile = "studio-v1") {
     this.profile = profile;
@@ -257,6 +258,8 @@ class FakeGateway implements Gateway {
           : this.profile === "studio-v1"
             ? "InvoicePaid"
             : "InvoicePaid";
+    const createArgs =
+      this.last?.functionName === "createInvoice" ? (this.last.args ?? []) : [];
     const args = {
       id: 1n,
       creator: payer,
@@ -272,6 +275,29 @@ class FakeGateway implements Gateway {
       payoutA: 70000000n,
       payoutB: 30000000n,
       cancelledBy: this.lastAccount,
+      ...(this.last?.functionName === "createInvoice"
+        ? this.profile === "studio-v1"
+          ? {
+              creator: createArgs.length ? this.lastAccount : payer,
+              payer: createArgs[0],
+              recipientA: createArgs[1],
+              recipientB: createArgs[2],
+              amount: createArgs[3],
+              bpsA: createArgs[4],
+              bpsB: createArgs[5],
+              expiry: createArgs[6],
+              referenceHash: createArgs[7],
+            }
+          : {
+              payer: this.lastAccount,
+              recipientA: createArgs[0],
+              recipientB: createArgs[1],
+              amount: createArgs[2],
+              shareBps: createArgs[3],
+              expiry: createArgs[4],
+            }
+        : {}),
+      ...this.createEventOverrides,
     };
     const e = log(this.profile, event, args);
     if (this.wrongEventAddress) e.address = a;
@@ -380,6 +406,54 @@ describe.each(["studio-v1", "kishore-v1"] as const)(
         s: new LiveInvoiceService(g, config(profile), (x) => states.push(x)),
       };
     }
+    it("fails closed when recovered create calldata differs from the persisted intent", async () => {
+      const { g } = setup();
+      const store = new MemoryRecoveryStore();
+      const s = new LiveInvoiceService(g, config(profile), () => {});
+      await s.initializeRecovery(store);
+      g.timeout = true;
+      await expect(s.createInvoice(draft, payer)).rejects.toThrow("timeout");
+      const call = g.last!;
+      const args = [...(call.args ?? [])];
+      if (profile === "studio-v1") args[1] = b;
+      else args[0] = b;
+      g.last = { ...call, args };
+      const restored = new LiveInvoiceService(
+        g,
+        config(profile),
+        () => {},
+        true,
+      );
+      await restored.initializeRecovery(store);
+      g.timeout = false;
+      await expect(restored.recoverPending()).rejects.toThrow(
+        "calldata does not match",
+      );
+      expect(restored.pendingHash).toBe(txHash);
+      expect(g.sent).toHaveLength(1);
+    });
+    it("does not accept a creation event with a mismatched share or expiry", async () => {
+      const { g } = setup();
+      const store = new MemoryRecoveryStore();
+      const s = new LiveInvoiceService(g, config(profile), () => {});
+      await s.initializeRecovery(store);
+      g.timeout = true;
+      await expect(s.createInvoice(draft, payer)).rejects.toThrow("timeout");
+      g.createEventOverrides =
+        profile === "studio-v1" ? { bpsB: 2999 } : { expiry: 1999n };
+      const restored = new LiveInvoiceService(
+        g,
+        config(profile),
+        () => {},
+        true,
+      );
+      await restored.initializeRecovery(store);
+      g.timeout = false;
+      await expect(restored.recoverPending()).rejects.toThrow(
+        "matching invoice creation event",
+      );
+      expect(restored.pendingHash).toBe(txHash);
+    });
     it("normalizes exact invoice model and six-decimal funding", async () => {
       const { s } = setup();
       const i = await s.getInvoice(1n);
@@ -494,7 +568,8 @@ describe.each(["studio-v1", "kishore-v1"] as const)(
         profile,
       });
       expect(JSON.parse(store.values.get(key)!)).toMatchObject({
-        version: 1,
+        version: 2,
+        createIntent: null,
         hash: txHash,
         operation: "approve",
         account: payer,
@@ -594,7 +669,7 @@ it("fails closed on corrupted persisted recovery without crashing", async () => 
   expect(g.sent).toHaveLength(0);
 });
 
-it("rejects unsupported recovery versions with the expected schema", async () => {
+it("blocks malformed persisted create intents before any transaction can be sent", async () => {
   const g = new FakeGateway();
   const store = new MemoryRecoveryStore();
   const key = recoveryStorageKey({
@@ -610,9 +685,52 @@ it("rejects unsupported recovery versions with the expected schema", async () =>
       contractAddress: contract,
       profile: "studio-v1",
       account: payer,
+      operation: "create",
+      invoiceId: null,
+      amount: null,
+      hash: txHash,
+      createdAt: Date.now(),
+      createIntent: {
+        payer,
+        creator: payer,
+        recipientA: a,
+        recipientB: b,
+        amount: "100000000",
+        shareBps: 7000,
+        expiry: "not-a-number",
+        referenceHash: `0x${"00".repeat(32)}`,
+      },
+    }),
+  );
+  const service = new LiveInvoiceService(g, config(), () => {}, true);
+  await service.initializeRecovery(store);
+  expect(service.recoveryIssue).toContain("creation intent is invalid");
+  await expect(service.createInvoice(draft, payer)).rejects.toThrow(
+    "Live transactions are blocked",
+  );
+  expect(g.sent).toHaveLength(0);
+});
+
+it("rejects unsupported recovery versions with the expected schema", async () => {
+  const g = new FakeGateway();
+  const store = new MemoryRecoveryStore();
+  const key = recoveryStorageKey({
+    chainId: 5042002,
+    contractAddress: contract,
+    profile: "studio-v1",
+  });
+  store.values.set(
+    key,
+    JSON.stringify({
+      version: 3,
+      chainId: 5042002,
+      contractAddress: contract,
+      profile: "studio-v1",
+      account: payer,
       operation: "pay",
       invoiceId: "1",
       amount: null,
+      createIntent: null,
       hash: txHash,
       createdAt: Date.now(),
     }),
@@ -637,7 +755,7 @@ it("does not attach a saved record to a different ABI profile", async () => {
   store.values.set(
     key,
     JSON.stringify({
-      version: 1,
+      version: 2,
       chainId: 5042002,
       contractAddress: contract,
       profile: "kishore-v1",
@@ -645,6 +763,7 @@ it("does not attach a saved record to a different ABI profile", async () => {
       operation: "pay",
       invoiceId: "1",
       amount: null,
+      createIntent: null,
       hash: txHash,
       createdAt: Date.now(),
     }),

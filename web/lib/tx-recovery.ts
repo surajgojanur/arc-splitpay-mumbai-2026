@@ -8,13 +8,25 @@ export type RecoveryScope = {
   profile: Profile;
 };
 export type PendingTransaction = RecoveryScope & {
-  version: 1;
+  version: 2;
   account: Address;
   operation: RecoveryOperation;
   invoiceId: string | null;
   amount: string | null;
+  createIntent: CreateIntent | null;
   hash: Hash;
   createdAt: number;
+};
+
+export type CreateIntent = {
+  payer: Address;
+  creator: Address;
+  recipientA: Address;
+  recipientB: Address;
+  amount: string;
+  shareBps: number;
+  expiry: string;
+  referenceHash: Hash;
 };
 
 export interface RecoveryStore {
@@ -68,6 +80,7 @@ export function parsePendingTransaction(
     "operation",
     "invoiceId",
     "amount",
+    "createIntent",
     "hash",
     "createdAt",
   ];
@@ -75,7 +88,7 @@ export function parsePendingTransaction(
     throw new Error(
       "Saved transaction recovery data has an unsupported shape.",
     );
-  if (p.version !== 1)
+  if (p.version !== 2)
     throw new Error(
       "Saved transaction recovery data has an unsupported version.",
     );
@@ -112,6 +125,66 @@ export function parsePendingTransaction(
     (operation === "approve" ? !validNumber(p.amount, true) : p.amount !== null)
   )
     throw new Error("Saved transaction invoice details are invalid.");
+  let createIntent: CreateIntent | null = null;
+  if (operation === "create") {
+    const v = p.createIntent;
+    if (!v || typeof v !== "object" || Array.isArray(v))
+      throw new Error("Saved invoice creation intent is invalid.");
+    const i = v as Record<string, unknown>;
+    if (
+      Object.keys(i).length !== 8 ||
+      ![
+        "payer",
+        "creator",
+        "recipientA",
+        "recipientB",
+        "amount",
+        "shareBps",
+        "expiry",
+        "referenceHash",
+      ].every((k) => k in i) ||
+      ![i.payer, i.creator, i.recipientA, i.recipientB].every(
+        (x) => typeof x === "string" && isAddress(x),
+      ) ||
+      !validNumber(i.amount, true) ||
+      !validNumber(i.expiry, true) ||
+      typeof i.shareBps !== "number" ||
+      !Number.isInteger(i.shareBps) ||
+      i.shareBps < 1 ||
+      i.shareBps > 9999 ||
+      typeof i.referenceHash !== "string" ||
+      !/^0x[\da-fA-F]{64}$/.test(i.referenceHash)
+    )
+      throw new Error("Saved invoice creation intent is invalid.");
+    if (
+      (i.recipientA as string).toLowerCase() ===
+      (i.recipientB as string).toLowerCase()
+    )
+      throw new Error("Saved invoice creation participants are invalid.");
+    createIntent = {
+      payer: getAddress(i.payer as string),
+      creator: getAddress(i.creator as string),
+      recipientA: getAddress(i.recipientA as string),
+      recipientB: getAddress(i.recipientB as string),
+      amount: i.amount as string,
+      shareBps: i.shareBps,
+      expiry: i.expiry as string,
+      referenceHash: i.referenceHash as Hash,
+    };
+    if (
+      createIntent.creator.toLowerCase() !==
+        (p.account as string).toLowerCase() ||
+      (expected.profile === "kishore-v1" &&
+        createIntent.payer.toLowerCase() !== createIntent.creator.toLowerCase())
+    )
+      throw new Error(
+        "Saved invoice creation intent does not match its wallet or contract profile.",
+      );
+  } else if (p.createIntent !== null) {
+    throw new Error(
+      "Saved transaction creation intent does not match its operation.",
+    );
+  }
   if (
     typeof p.createdAt !== "number" ||
     !Number.isSafeInteger(p.createdAt) ||
@@ -119,7 +192,7 @@ export function parsePendingTransaction(
   )
     throw new Error("Saved transaction timestamp is invalid.");
   return {
-    version: 1,
+    version: 2,
     chainId: p.chainId as number,
     contractAddress: getAddress(p.contractAddress),
     profile: p.profile as Profile,
@@ -127,6 +200,7 @@ export function parsePendingTransaction(
     operation,
     invoiceId: p.invoiceId as string | null,
     amount: p.amount as string | null,
+    createIntent,
     hash: p.hash as Hash,
     createdAt: p.createdAt,
   };
