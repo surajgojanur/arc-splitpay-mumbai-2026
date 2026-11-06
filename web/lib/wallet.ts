@@ -7,7 +7,7 @@ type Provider = EIP1193Provider & {
   on?: (event: string, listener: () => void) => void;
   removeListener?: (event: string, listener: () => void) => void;
 };
-function provider(): Provider {
+export function provider(): Provider {
   const ethereum = (window as Window & { ethereum?: Provider }).ethereum;
   if (!ethereum)
     throw new Error(
