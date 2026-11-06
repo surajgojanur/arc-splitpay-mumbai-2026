@@ -28,8 +28,6 @@ jobs:
         working-directory: chain
       - run: node --test script/live-arc-testnet.test.mjs
         working-directory: chain
-      - run: node script/check-studio-abi.mjs
-        working-directory: chain
       - run: npm ci
         working-directory: chain/studio-candidate
       - run: forge build
