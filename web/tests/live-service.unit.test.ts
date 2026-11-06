@@ -25,6 +25,10 @@ import {
 import { USDC } from "../lib/network";
 import { recoveryStorageKey, type RecoveryStore } from "../lib/tx-recovery";
 import {
+  prepareDeploymentMetadata,
+  verifyArcDeployment,
+} from "../scripts/prepare-deployment.mjs";
+import {
   FIXTURE_PAYER as payer,
   FIXTURE_A as a,
   FIXTURE_B as b,
@@ -351,6 +355,13 @@ describe("ABI and deployment gates", () => {
       ),
     );
     expect(abis["studio-v1"]).toEqual(studio);
+    const kishore = JSON.parse(
+      readFileSync(
+        new URL("../../chain/abi/ArcSplit.json", import.meta.url),
+        "utf8",
+      ),
+    );
+    expect(abis["kishore-v1"]).toEqual(kishore);
     expect(
       getAbiItem({ abi: abis["studio-v1"], name: "settleInvoice" }),
     ).toBeTruthy();
@@ -358,6 +369,122 @@ describe("ABI and deployment gates", () => {
       getAbiItem({ abi: abis["kishore-v1"], name: "payInvoice" }),
     ).toBeTruthy();
     expect(abiHash("studio-v1")).not.toBe(abiHash("kishore-v1"));
+  });
+  it("rejects malformed or zero deployment metadata before config can be written", () => {
+    const metadata = {
+      chainId: 5042002,
+      contractAddress: contract,
+      usdcAddress: USDC,
+      usdcDecimals: 6,
+      deploymentBlock: "12",
+      deploymentTransactionHash: deployHash,
+      compilerVersion: "0.8.28+commit.7893614a",
+      sourceCommit: "a".repeat(40),
+      explorerUrl: `https://explorer.testnet.arc.io/address/${contract}`,
+    };
+    const runtimeHash = keccak256(code);
+    expect(() =>
+      prepareDeploymentMetadata(metadata, "auto", runtimeHash),
+    ).toThrow("profile");
+    expect(() =>
+      prepareDeploymentMetadata(
+        { ...metadata, contractAddress: USDC },
+        "kishore-v1",
+        runtimeHash,
+      ),
+    ).toThrow("metadata");
+    expect(() =>
+      prepareDeploymentMetadata(
+        { ...metadata, deploymentTransactionHash: `0x${"0".repeat(64)}` },
+        "kishore-v1",
+        runtimeHash,
+      ),
+    ).toThrow("metadata");
+    expect(() =>
+      prepareDeploymentMetadata(metadata, "kishore-v1", `0x${"0".repeat(64)}`),
+    ).toThrow("runtime code hash");
+  });
+  it("prepares config only after read-only receipt, runtime, token and chain verification", async () => {
+    const metadata = {
+      chainId: 5042002,
+      contractAddress: contract,
+      usdcAddress: USDC,
+      usdcDecimals: 6,
+      deploymentBlock: "12",
+      deploymentTransactionHash: deployHash,
+      compilerVersion: "0.8.28+commit.7893614a",
+      sourceCommit: "a".repeat(40),
+      explorerUrl: `https://explorer.testnet.arc.io/address/${contract}`,
+    };
+    const prepared = prepareDeploymentMetadata(
+      metadata,
+      "kishore-v1",
+      keccak256(code),
+    );
+    const fake = {
+      getChainId: async () => 5042002,
+      getTransactionReceipt: async () => ({
+        status: "success",
+        blockNumber: 12n,
+        contractAddress: contract,
+      }),
+      getCode: async () => code,
+      readContract: async ({
+        address,
+        functionName,
+      }: {
+        address: Address;
+        functionName: string;
+      }) => (functionName === "usdc" ? USDC : address === USDC ? 6 : 0),
+    };
+    await expect(
+      verifyArcDeployment(prepared, fake as never),
+    ).resolves.toBeUndefined();
+    await expect(
+      verifyArcDeployment(prepared, {
+        ...fake,
+        getChainId: async () => 1,
+      } as never),
+    ).rejects.toThrow("network");
+    await expect(
+      verifyArcDeployment(prepared, {
+        ...fake,
+        getCode: async () => "0x" as Hex,
+      } as never),
+    ).rejects.toThrow("bytecode");
+    await expect(
+      verifyArcDeployment(prepared, {
+        ...fake,
+        getTransactionReceipt: async () => ({
+          status: "reverted",
+          blockNumber: 12n,
+          contractAddress: contract,
+        }),
+      } as never),
+    ).rejects.toThrow("receipt");
+    await expect(
+      verifyArcDeployment(prepared, {
+        ...fake,
+        readContract: async ({
+          functionName,
+        }: {
+          address: Address;
+          functionName: string;
+        }) => (functionName === "usdc" ? a : 6),
+      } as never),
+    ).rejects.toThrow("official 6-decimal");
+    await expect(
+      verifyArcDeployment(prepared, {
+        ...fake,
+        readContract: async ({
+          address,
+          functionName,
+        }: {
+          address: Address;
+          functionName: string;
+        }) => (functionName === "usdc" ? USDC : address === USDC ? 18 : 0),
+      } as never),
+    ).rejects.toThrow("official 6-decimal");
   });
   it("rejects missing configuration before any RPC or signature", () =>
     expect(() => parseDeployment(null)).toThrow("Contract not deployed"));
@@ -397,6 +524,54 @@ describe("ABI and deployment gates", () => {
 describe.each(["studio-v1", "kishore-v1"] as const)(
   "%s live adapter",
   (profile) => {
+    const calldataMismatches: Array<{
+      index: number;
+      value: unknown;
+      label: string;
+    }> =
+      profile === "studio-v1"
+        ? [
+            { index: 0, value: b, label: "payer" },
+            { index: 1, value: b, label: "recipient A" },
+            { index: 2, value: a, label: "recipient B" },
+            { index: 3, value: 99999999n, label: "amount" },
+            { index: 4, value: 6999, label: "share A" },
+            { index: 5, value: 3001, label: "share B" },
+            { index: 6, value: 1999n, label: "expiry" },
+            {
+              index: 7,
+              value: `0x${"11".repeat(32)}`,
+              label: "reference hash",
+            },
+          ]
+        : [
+            { index: 0, value: b, label: "recipient A" },
+            { index: 1, value: a, label: "recipient B" },
+            { index: 2, value: 99999999n, label: "amount" },
+            { index: 3, value: 6999, label: "share" },
+            { index: 4, value: 1999n, label: "expiry" },
+          ];
+    const eventMismatches: Array<Record<string, unknown>> =
+      profile === "studio-v1"
+        ? [
+            { payer: b },
+            { creator: b },
+            { recipientA: b },
+            { recipientB: a },
+            { amount: 99999999n },
+            { bpsA: 6999 },
+            { bpsB: 2999 },
+            { expiry: 1999n },
+            { referenceHash: `0x${"11".repeat(32)}` },
+          ]
+        : [
+            { payer: b },
+            { recipientA: b },
+            { recipientB: a },
+            { amount: 99999999n },
+            { shareBps: 6999 },
+            { expiry: 1999n },
+          ];
     function setup() {
       const g = new FakeGateway(profile);
       const states: TxState[] = [];
@@ -406,54 +581,58 @@ describe.each(["studio-v1", "kishore-v1"] as const)(
         s: new LiveInvoiceService(g, config(profile), (x) => states.push(x)),
       };
     }
-    it("fails closed when recovered create calldata differs from the persisted intent", async () => {
-      const { g } = setup();
-      const store = new MemoryRecoveryStore();
-      const s = new LiveInvoiceService(g, config(profile), () => {});
-      await s.initializeRecovery(store);
-      g.timeout = true;
-      await expect(s.createInvoice(draft, payer)).rejects.toThrow("timeout");
-      const call = g.last!;
-      const args = [...(call.args ?? [])];
-      if (profile === "studio-v1") args[1] = b;
-      else args[0] = b;
-      g.last = { ...call, args };
-      const restored = new LiveInvoiceService(
-        g,
-        config(profile),
-        () => {},
-        true,
-      );
-      await restored.initializeRecovery(store);
-      g.timeout = false;
-      await expect(restored.recoverPending()).rejects.toThrow(
-        "calldata does not match",
-      );
-      expect(restored.pendingHash).toBe(txHash);
-      expect(g.sent).toHaveLength(1);
-    });
-    it("does not accept a creation event with a mismatched share or expiry", async () => {
-      const { g } = setup();
-      const store = new MemoryRecoveryStore();
-      const s = new LiveInvoiceService(g, config(profile), () => {});
-      await s.initializeRecovery(store);
-      g.timeout = true;
-      await expect(s.createInvoice(draft, payer)).rejects.toThrow("timeout");
-      g.createEventOverrides =
-        profile === "studio-v1" ? { bpsB: 2999 } : { expiry: 1999n };
-      const restored = new LiveInvoiceService(
-        g,
-        config(profile),
-        () => {},
-        true,
-      );
-      await restored.initializeRecovery(store);
-      g.timeout = false;
-      await expect(restored.recoverPending()).rejects.toThrow(
-        "matching invoice creation event",
-      );
-      expect(restored.pendingHash).toBe(txHash);
-    });
+    it.each(calldataMismatches)(
+      "fails closed when recovered create calldata changes $label",
+      async ({ index, value }) => {
+        const { g } = setup();
+        const store = new MemoryRecoveryStore();
+        const s = new LiveInvoiceService(g, config(profile), () => {});
+        await s.initializeRecovery(store);
+        g.timeout = true;
+        await expect(s.createInvoice(draft, payer)).rejects.toThrow("timeout");
+        const call = g.last!;
+        const args = [...(call.args ?? [])];
+        args[index] = value;
+        g.last = { ...call, args };
+        const restored = new LiveInvoiceService(
+          g,
+          config(profile),
+          () => {},
+          true,
+        );
+        await restored.initializeRecovery(store);
+        g.timeout = false;
+        await expect(restored.recoverPending()).rejects.toThrow(
+          "calldata does not match",
+        );
+        expect(restored.pendingHash).toBe(txHash);
+        expect(g.sent).toHaveLength(1);
+      },
+    );
+    it.each(eventMismatches)(
+      "does not accept a creation event with mismatched fields %#",
+      async (overrides) => {
+        const { g } = setup();
+        const store = new MemoryRecoveryStore();
+        const s = new LiveInvoiceService(g, config(profile), () => {});
+        await s.initializeRecovery(store);
+        g.timeout = true;
+        await expect(s.createInvoice(draft, payer)).rejects.toThrow("timeout");
+        g.createEventOverrides = overrides;
+        const restored = new LiveInvoiceService(
+          g,
+          config(profile),
+          () => {},
+          true,
+        );
+        await restored.initializeRecovery(store);
+        g.timeout = false;
+        await expect(restored.recoverPending()).rejects.toThrow(
+          "matching invoice creation event",
+        );
+        expect(restored.pendingHash).toBe(txHash);
+      },
+    );
     it("normalizes exact invoice model and six-decimal funding", async () => {
       const { s } = setup();
       const i = await s.getInvoice(1n);
