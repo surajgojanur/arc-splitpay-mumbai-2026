@@ -22,7 +22,7 @@ Recovery checks the RPC chain, transaction hash, sender, destination, decoded me
 - `npm ci` — passed; npm reported 8 moderate development dependency advisories.
 - `npm run typecheck` — passed.
 - `npm run lint` — passed.
-- `npm test` — passed, 73 tests, including both ABI profiles, persistence after service recreation, all four operations, missing receipts/evidence, reverted tx, wallet mismatch, corrupt/unsupported data and storage failure.
+- `npm test` — passed, 75 tests, including both ABI profiles, persistence after service recreation, all four operations, missing receipts/evidence, reverted tx, wallet/network/profile mismatch, corrupt/unsupported data and storage failure.
 - `npm run build` — passed on Next.js 16.4.5.
 - `ARCSPLIT_SCREENSHOT_DIR=/tmp/arcsplit-sprint-browser-evidence-final npm run test:e2e` — passed, 4 Chromium scenarios. Existing screenshots were not overwritten; the e2e run checked desktop/mobile fixture and disabled-live states, including 390px horizontal-overflow assertions.
 - `npm audit --omit=dev` — 0 production vulnerabilities.

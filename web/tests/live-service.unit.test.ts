@@ -626,6 +626,46 @@ it("rejects unsupported recovery versions with the expected schema", async () =>
   expect(g.sent).toHaveLength(0);
 });
 
+it("does not attach a saved record to a different ABI profile", async () => {
+  const g = new FakeGateway();
+  const store = new MemoryRecoveryStore();
+  const key = recoveryStorageKey({
+    chainId: 5042002,
+    contractAddress: contract,
+    profile: "studio-v1",
+  });
+  store.values.set(
+    key,
+    JSON.stringify({
+      version: 1,
+      chainId: 5042002,
+      contractAddress: contract,
+      profile: "kishore-v1",
+      account: payer,
+      operation: "pay",
+      invoiceId: "1",
+      amount: null,
+      hash: txHash,
+      createdAt: Date.now(),
+    }),
+  );
+  const service = new LiveInvoiceService(
+    g,
+    config("studio-v1"),
+    () => {},
+    true,
+  );
+  await service.initializeRecovery(store);
+  expect(service.recoveryIssue).toContain(
+    "different contract, network, or ABI profile",
+  );
+  expect(service.pendingHash).toBeUndefined();
+  await expect(service.payInvoice(1n, payer)).rejects.toThrow(
+    "Live transactions are blocked",
+  );
+  expect(g.sent).toHaveLength(0);
+});
+
 it("retains the recovery lock when the RPC cannot find the submitted transaction", async () => {
   const g = new FakeGateway();
   const store = new MemoryRecoveryStore();
@@ -639,6 +679,22 @@ it("retains the recovery lock when the RPC cannot find the submitted transaction
   );
   expect(service.pendingHash).toBe(txHash);
   await expect(service.approve(1n, payer)).rejects.toThrow("unresolved");
+  expect(g.sent).toHaveLength(1);
+});
+
+it("keeps the lock when the recovery RPC is on the wrong network", async () => {
+  const g = new FakeGateway();
+  const store = new MemoryRecoveryStore();
+  const service = new LiveInvoiceService(g, config(), () => {});
+  await service.initializeRecovery(store);
+  g.timeout = true;
+  await expect(service.approve(1n, payer)).rejects.toThrow("timeout");
+  g.timeout = false;
+  g.rpcId = 1;
+  await expect(service.recoverPending()).rejects.toThrow(
+    "RPC network mismatch",
+  );
+  expect(service.pendingHash).toBe(txHash);
   expect(g.sent).toHaveLength(1);
 });
 
