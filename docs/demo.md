@@ -1,10 +1,10 @@
 # Demo and submission checklist
 
-Run `npm ci`, `npm run dev` and open http://localhost:3000. The current app is conspicuously marked DEMO DATA. Connect an injected EVM wallet for network/balance inspection, or use the explicit fixture wallet. Create a 100 USDC, 70/30 invoice, review payouts, simulate approval and settlement and inspect the fixture receipt. No simulated transaction is payment proof.
+Run `npm ci`, `npm run dev` and open http://localhost:3000. Fixture views are conspicuously marked DEMO DATA. The Live payments tab is separate and disabled without verified deployment metadata. Connect an injected EVM wallet for network/balance inspection, or use the explicit fixture wallet. Create a 100 USDC, 70/30 invoice, review payouts, simulate approval and settlement and inspect the fixture receipt. No simulated transaction is payment proof.
 
 ## Video script (recording pending)
 
-1. Show Arc Studio project and original generation (blocked).
+1. Show the actual Arc Studio project and original generation (share URL and recording pending; downloaded source is now preserved).
 2. Explain: one invoice pays two contributors, once.
 3. Connect Arc Testnet payer, enter recipients and 100 USDC with 70/30 split.
 4. Show required allowance approval and real settlement signatures.
@@ -15,17 +15,20 @@ Run `npm ci`, `npm run dev` and open http://localhost:3000. The current app is c
 
 - [x] Public GitHub repository and frontend scaffold
 - [x] Architecture diagram and AI disclosure
-- [ ] Real Arc Studio starting point and shareable URL
-- [ ] Kishore confirms shared interface
-- [ ] Contract tests, deployment and verification
-- [ ] Live ABI integration and complete testnet payment
+- [x] Studio-generated source export preserved
+- [ ] Shareable Studio project URL and original chat/screenshots
+- [ ] Kishore confirms final deployed source/profile
+- [x] Both independent contract test suites reproduced
+- [ ] Contract deployment and verification
+- [x] Live ABI adapter code and regression tests
+- [ ] Complete genuine testnet payment
 - [ ] Recipient receipt proof and explorer links
 - [ ] Final Studio demonstration
 - [ ] Demo video and presentation
 
 Chosen bounty: **Best Smart Contracts with Advanced Stablecoin Logic, In Arc Studio**. Not submission-ready; eligibility is not claimed.
 
-## Frontend validation evidence — 2026-11-06
+## Original fixture milestone evidence — 2026-11-06
 
 Passed locally with Node v22.23.1: `npm ci`, `npm run typecheck`, `npm run lint`, `npm test` (17 tests), `npm run build`, and `npm run test:e2e` (3 Playwright Chromium tests). Browser coverage includes disconnected wallet, invalid form, exact 70/30 preview, approval rejection/retry, pending settlement, failed settlement/retry, fixture receipt, lookup failure, cancellation, wrong network and rejected network switching. Mobile checks use 390 × 844 and assert no horizontal overflow.
 

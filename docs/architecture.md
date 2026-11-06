@@ -1,24 +1,25 @@
-# Architecture and proposed interface
+# Architecture and contract profiles
 
 ```mermaid
 flowchart LR
-  P[Payer wallet] --> W[Next.js frontend]
-  W --> F[Explicit fixture adapter: current]
-  W -. pending confirmed ABI .-> C[ArcSplit contract: Kishore]
+  P[Payer wallet] --> W[Next.js invoice UI]
+  W --> F[Fixture service: DEMO DATA]
+  W --> L[Typed live service and explicit ABI profile]
+  L -. verified deployment pending .-> C[Reviewed ArcSplit contract]
   C --> U[Official Arc USDC ERC20]
   U --> A[Recipient A]
   U --> B[Recipient B]
-  S[Arc Studio: blocked] -. starting point required .-> C
+  S[Studio source preserved] -. Kishore review and source selection .-> C
 ```
 
 No database. Contract state and indexed events are the future source of truth. Fixtures live only in browser memory and never produce chain hashes or explorer payment proof.
 
-## Interface proposal — requires Kishore acknowledgement
+## Original proposal — implemented by Kishore; Studio differences below
 
 Conceptual operations: createInvoice, getInvoice, payInvoice, cancelInvoice.
-Suggested createInvoice(address recipientA,address recipientB,uint256 amount,uint16 shareBps,uint64 expiry); designated payer = msg.sender. Suggested getInvoice(uint256 id) returns payer, recipientA, recipientB, amount, shareBps, expiry, status. Suggested payInvoice(uint256 id), cancelInvoice(uint256 id). Optional memo hash omitted unless agreed. These are proposals only; frontend contains no speculative contract ABI.
+Suggested createInvoice(address recipientA,address recipientB,uint256 amount,uint16 shareBps,uint64 expiry); designated payer = msg.sender. Suggested getInvoice(uint256 id) returns payer, recipientA, recipientB, amount, shareBps, expiry, status. Suggested payInvoice(uint256 id), cancelInvoice(uint256 id). Optional memo hash omitted unless agreed. These were the original proposals; Kishore implemented them in PR #9. Exact read-only ABI snapshots now exist in the frontend. Studio differs as described below.
 
-Proposed events InvoiceCreated(id indexed,payer indexed,recipientA,recipientB,amount,shareBps,expiry), InvoicePaid(id indexed,payer indexed,amount,payoutA,payoutB), InvoiceCancelled(id indexed,payer indexed). Kishore must confirm signatures, indexed fields, status encoding, ID origin, cancellation authority, rounding and deployment block in GitHub issue before implementation.
+Proposed events InvoiceCreated(id indexed,payer indexed,recipientA,recipientB,amount,shareBps,expiry), InvoicePaid(id indexed,payer indexed,amount,payoutA,payoutB), InvoiceCancelled(id indexed,payer indexed). Kishore confirmed these encodings in issue #1. Final source/profile selection and deployment metadata still require owner review.
 
 Use uint atomic amounts: ERC20 USDC has 6 decimals; native gas USDC has 18. Never mix these units. Compute A = floor(amount * shareBps / 10000), B = amount - A; require both nonzero. Amounts never use floating point. Only designated payer can pay or cancel; open, unexpired invoices can settle exactly once. Contract must enforce all conditions independently of UI. Safe ERC20 transfers and atomic rollback are Kishore's responsibility.
 
