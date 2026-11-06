@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import path from "node:path";
 const shot = (name: string) =>
-  path.resolve("public/screenshots", `${name}.png`);
+  path.resolve("public/screenshots/integration", `${name}.png`);
 test("fixture invoice validation, preview, rejection, pending, recovery and receipt", async ({
   page,
 }) => {
@@ -123,4 +123,36 @@ test("injected wallet wrong network and rejected switch", async ({ page }) => {
   ).toBeVisible();
   await page.getByRole("button", { name: "Switch to Arc Testnet" }).click();
   await expect(page.getByRole("alert").first()).toContainText("rejected");
+});
+
+test("live payments stay disabled without a deployment on desktop and mobile", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Live payments", exact: true })
+    .click();
+  await expect(
+    page.getByText("Contract not deployed — testnet payments unavailable.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.getByText("DEMO DATA", { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Create invoice on Arc Testnet" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Read invoice from chain" }),
+  ).toBeDisabled();
+  await page.screenshot({ path: shot("live-not-deployed"), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({
+    path: shot("mobile-live-not-deployed"),
+    fullPage: true,
+  });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
 });

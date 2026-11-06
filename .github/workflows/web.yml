@@ -1,7 +1,7 @@
 name: Frontend checks
 on:
   push:
-    branches: [main, feat/suraj-frontend]
+    branches: [main, feat/suraj-frontend, feat/suraj-arcstudio-integration]
   pull_request:
     paths: ["web/**", "package*.json", ".github/workflows/web.yml"]
 jobs:
